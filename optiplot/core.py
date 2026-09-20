@@ -508,7 +508,10 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             enc,
             3,
         )
-        if _valid_count(data, [x, y]) >= 300:
+        # Hexbin counts samples per region. On a complete measurement grid every
+        # cell holds one sample, so the map is uniform and the heatmap already
+        # shows the measured value directly.
+        if _valid_count(data, [x, y]) >= 300 and not p.grid_like:
             add(
                 "density",
                 "二维密度 / 六边形分箱",

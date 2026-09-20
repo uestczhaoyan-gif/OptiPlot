@@ -3,163 +3,179 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OptiPlot 界面稿 · 极简方向</title>
+<title>OptiPlot 界面稿 · 工作台 + 图型库</title>
 <style>
-/* ── 配色主题：只影响界面外壳，数据颜色恒定为 Okabe-Ito ───────────── */
+/* ── 界面主题只影响外壳；图内数据配色恒为 Okabe-Ito ───────────────── */
 :root[data-theme="ink"]{
   --bg:#F1F5F9; --panel:#FFFFFF; --card:#FFFFFF; --ink:#17324D; --muted:#5D7487;
-  --line:#DEE6ED; --accent:#0072B2; --accent-ink:#FFFFFF; --hover:#F7FAFC; --lw:1px;
-  --field:#FFFFFF; --field-ink:#17324D;
-}
+  --line:#DEE6ED; --accent:#0072B2; --accent-ink:#FFF; --hover:#F7FAFC; --lw:1px;
+  --field:#FFF; --field-ink:#17324D;}
 :root[data-theme="paper"]{
   --bg:#FBFBFA; --panel:#FBFBFA; --card:#FFFFFF; --ink:#1A1A18; --muted:#75736E;
-  --line:#E8E7E3; --accent:#0072B2; --accent-ink:#FFFFFF; --hover:#F3F3F0; --lw:1px;
-  --field:#FFFFFF; --field-ink:#1A1A18;
-}
+  --line:#E8E7E3; --accent:#0072B2; --accent-ink:#FFF; --hover:#F3F3F0; --lw:1px;
+  --field:#FFF; --field-ink:#1A1A18;}
 :root[data-theme="stone"]{
   --bg:#F5F4F1; --panel:#EDECE8; --card:#FFFFFF; --ink:#292524; --muted:#78716C;
-  --line:#DEDAD3; --accent:#A16207; --accent-ink:#FFFFFF; --hover:#F0EFEA; --lw:1px;
-  --field:#FFFFFF; --field-ink:#292524;
-}
+  --line:#DEDAD3; --accent:#A16207; --accent-ink:#FFF; --hover:#F0EFEA; --lw:1px;
+  --field:#FFF; --field-ink:#292524;}
 :root[data-theme="lab"]{
   --bg:#101418; --panel:#171C22; --card:#FFFFFF; --ink:#E6EDF3; --muted:#8B98A5;
   --line:#2B333B; --accent:#56B4E9; --accent-ink:#0B1116; --hover:#1D242B; --lw:1px;
-  --field:#1D242B; --field-ink:#E6EDF3;
-}
+  --field:#1D242B; --field-ink:#E6EDF3;}
 :root[data-theme="contrast"]{
-  --bg:#FFFFFF; --panel:#FFFFFF; --card:#FFFFFF; --ink:#000000; --muted:#2E2E2E;
-  --line:#000000; --accent:#004E8B; --accent-ink:#FFFFFF; --hover:#F0F0F0; --lw:2px;
-  --field:#FFFFFF; --field-ink:#000000;
-}
+  --bg:#FFF; --panel:#FFF; --card:#FFF; --ink:#000; --muted:#2E2E2E;
+  --line:#000; --accent:#004E8B; --accent-ink:#FFF; --hover:#F0F0F0; --lw:2px;
+  --field:#FFF; --field-ink:#000;}
 
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{
   background:var(--bg); color:var(--ink);
   font:15px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
-  display:grid; grid-template-rows:44px 1fr; -webkit-font-smoothing:antialiased;
-}
-button,input,select{font:inherit;color:inherit}
+  display:grid; grid-template-rows:46px 1fr; -webkit-font-smoothing:antialiased;}
+button,input,select,textarea{font:inherit;color:inherit}
 
-/* ── 顶栏：纯色、无渐变、无阴影 ─────────────────────────────────── */
-header{
-  background:var(--panel); border-bottom:var(--lw) solid var(--line);
-  display:flex; align-items:center; gap:14px; padding:0 18px;
-}
-header .mark{font-size:16px; font-weight:650; letter-spacing:-.01em}
-header .sub{font-size:12px; color:var(--muted); letter-spacing:.04em}
-header .right{margin-left:auto; font-size:12px; color:var(--muted);
-  font-variant-numeric:tabular-nums}
+header{background:var(--panel); border-bottom:var(--lw) solid var(--line);
+  display:flex; align-items:center; gap:18px; padding:0 18px}
+.mark{font-size:16px; font-weight:650; letter-spacing:-.01em}
+nav{display:flex; gap:2px}
+nav button{background:none; border:0; cursor:pointer; padding:6px 12px; font-size:14px;
+  color:var(--muted); border-bottom:2px solid transparent}
+nav button[aria-current="true"]{color:var(--ink); border-bottom-color:var(--accent)}
+.hright{margin-left:auto; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums}
 
-/* ── 主体：左栏 260px + 右主区 ──────────────────────────────────── */
-main{display:grid; grid-template-columns:260px 1fr; overflow:hidden}
-aside{
-  background:var(--panel); border-right:var(--lw) solid var(--line);
-  padding:18px 16px; overflow-y:auto;
-}
-h2{
-  font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase;
-  color:var(--muted); margin-bottom:10px;
-}
-section+section{margin-top:26px; padding-top:22px; border-top:var(--lw) solid var(--line)}
-.dataline{font-size:13px; font-variant-numeric:tabular-nums; color:var(--muted)}
-.dataline b{color:var(--ink); font-weight:600; display:block; margin-bottom:3px;
+.view{display:none; overflow:hidden}
+.view[data-on="true"]{display:grid}
+
+/* ── 工作台 ─────────────────────────────────────────────────────── */
+#work{grid-template-columns:262px 1fr}
+aside{background:var(--panel); border-right:var(--lw) solid var(--line);
+  padding:16px 14px; overflow-y:auto}
+h2{font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:9px}
+section+section{margin-top:22px; padding-top:18px; border-top:var(--lw) solid var(--line)}
+
+/* 导入：真实入口，不是只能挑 demo */
+.drop{border:1.5px dashed var(--line); border-radius:5px; padding:16px 12px;
+  text-align:center; cursor:pointer; background:var(--field)}
+.drop:hover,.drop[data-hot="true"]{border-color:var(--accent); background:var(--hover)}
+.drop b{display:block; font-size:14px; font-weight:600}
+.drop span{font-size:11.5px; color:var(--muted); display:block; margin-top:4px; line-height:1.5}
+#file{display:none}
+.dataline{font-size:13px; font-variant-numeric:tabular-nums; color:var(--muted); margin-top:12px}
+.dataline b{color:var(--ink); font-weight:600; display:block; margin-bottom:2px;
   font-size:14px; overflow-wrap:anywhere}
+select{background:var(--field); border:var(--lw) solid var(--line); color:var(--field-ink);
+  padding:5px 8px; border-radius:3px; font-size:13px}
+.ord{display:flex; gap:6px; width:100%}
+.ord select{flex:1; min-width:0}
 
-/* 候选列表：竖排单列，分数用等宽数字对齐 */
 .cands{list-style:none; display:flex; flex-direction:column; gap:1px}
-.cands button{
-  width:100%; text-align:left; background:none; border:0; cursor:pointer;
-  padding:8px 10px; display:grid; grid-template-columns:26px 1fr; gap:9px;
-  align-items:baseline; border-left:2px solid transparent; border-radius:0 3px 3px 0;
-}
+.cands button{width:100%; text-align:left; background:none; border:0; cursor:pointer;
+  padding:8px 10px; display:grid; grid-template-columns:22px 1fr; gap:9px;
+  align-items:baseline; border-left:2px solid transparent; border-radius:0 3px 3px 0}
 .cands button:hover{background:var(--hover)}
-.cands button[aria-current="true"]{
-  background:var(--hover); border-left-color:var(--accent);
-}
-.cands .score{
-  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; text-align:right;
-}
-.cands button[aria-current="true"] .score{color:var(--accent); font-weight:600}
+.cands button[aria-current="true"]{background:var(--hover); border-left-color:var(--accent)}
+.cands .tier{font-size:12px; color:var(--muted); text-align:right}
+.cands button[aria-current="true"] .tier{color:var(--accent); font-weight:600}
+.note{font-size:11.5px; color:var(--muted); margin-top:10px; line-height:1.6}
 
-/* ── 右主区 ─────────────────────────────────────────────────────── */
-.stage{overflow-y:auto; padding:20px 26px 90px}
-.figure{
-  background:var(--card); border:var(--lw) solid var(--line);
-  padding:14px; display:flex; justify-content:center;
-}
-.figure img{max-width:100%; max-height:52vh; display:block}
-.caption{margin-top:11px; font-size:13px; color:var(--muted); max-width:74ch}
+.stage{overflow-y:auto; padding:20px 26px 84px}
+.figure{background:var(--card); border:var(--lw) solid var(--line); padding:14px;
+  display:flex; justify-content:center}
+.figure img{max-width:100%; max-height:50vh; display:block}
+.caption{margin-top:11px; font-size:13px; color:var(--muted); max-width:78ch}
 .caption b{color:var(--ink); font-weight:600; font-size:14px}
 
-/* 抽屉：次要内容默认收起，这是"极简"的主要手段 */
-details{margin-top:14px; border-top:var(--lw) solid var(--line); padding-top:12px}
-details summary{
-  cursor:pointer; font-size:12px; color:var(--muted); list-style:none;
-  letter-spacing:.02em; user-select:none;
-}
+details{margin-top:13px; border-top:var(--lw) solid var(--line); padding-top:11px}
+details summary{cursor:pointer; font-size:12px; color:var(--muted); list-style:none;
+  user-select:none}
 details summary::before{content:"▸ "; color:var(--accent)}
 details[open] summary::before{content:"▾ "}
-details[open] summary{margin-bottom:11px}
+details[open] summary{margin-bottom:10px}
 .body{font-size:13px; color:var(--muted); line-height:1.7}
-.body code{
-  font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:12px;
-  background:var(--bg); padding:1px 5px; border-radius:3px; color:var(--ink);
-}
-.case{padding:11px 0; border-top:var(--lw) solid var(--line)}
-.case:first-child{border-top:0; padding-top:0}
-.case .t{color:var(--ink); font-weight:600; font-size:13px}
-.note{font-size:12px; color:var(--muted); margin-top:8px; font-style:normal}
+.body code{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:11.5px;
+  background:var(--bg); padding:1px 5px; border-radius:3px; color:var(--ink)}
+.warn{color:#B03060} :root[data-theme="lab"] .warn{color:#F0A0B0}
 
-/* 控件条：一行解决，标签弱化 */
-.controls{
-  margin-top:22px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:flex-end;
-  padding-bottom:16px; border-bottom:var(--lw) solid var(--line);
-}
+.controls{margin-top:20px; display:flex; flex-wrap:wrap; gap:9px 16px; align-items:flex-end;
+  padding-bottom:14px; border-bottom:var(--lw) solid var(--line)}
 .f{display:flex; flex-direction:column; gap:4px}
 .f label{font-size:11px; color:var(--muted); letter-spacing:.03em}
-.f select,.f input{
-  background:var(--field); border:var(--lw) solid var(--line); color:var(--field-ink);
-  padding:5px 8px; border-radius:3px; min-width:96px; font-size:13px;
-}
+.f input[type=text]{background:var(--field); border:var(--lw) solid var(--line);
+  color:var(--field-ink); padding:5px 8px; border-radius:3px; min-width:104px; font-size:13px}
 .f.check{flex-direction:row; align-items:center; gap:6px; padding-bottom:6px}
 .actions{margin-left:auto; display:flex; gap:8px; align-items:flex-end}
-.btn{
-  background:var(--field); border:var(--lw) solid var(--line); padding:7px 14px;
-  border-radius:3px; cursor:pointer; font-size:13px;
-}
+.btn{background:var(--field); border:var(--lw) solid var(--line); padding:7px 14px;
+  border-radius:3px; cursor:pointer; font-size:13px}
 .btn:hover{background:var(--hover)}
 .btn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
-.btn.primary:hover{opacity:.9}
 
-/* 配色选择器 */
-.picker{
-  position:fixed; right:20px; bottom:18px; display:flex; gap:6px; align-items:center;
+/* ── 图型库 ─────────────────────────────────────────────────────── */
+#lib{grid-template-columns:1fr}
+.libbar{background:var(--panel); border-bottom:var(--lw) solid var(--line);
+  padding:14px 26px; display:flex; gap:14px; align-items:center; flex-wrap:wrap}
+.libbar input{flex:1; min-width:220px; background:var(--field);
+  border:var(--lw) solid var(--line); color:var(--field-ink); padding:8px 12px; border-radius:4px}
+.libbar .cnt{font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums}
+.grid{overflow-y:auto; padding:22px 26px 60px; display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:16px; align-content:start}
+.gcard{background:var(--card); border:var(--lw) solid var(--line); display:flex;
+  flex-direction:column}
+.gcard>img{width:100%; display:block; background:#fff; border-bottom:var(--lw) solid var(--line)}
+.gbody{padding:12px 14px 14px}
+.gbody h3{font-size:14.5px; font-weight:650}
+.gbody .gid{font-family:ui-monospace,Consolas,monospace; font-size:11px; color:var(--muted);
+  margin-left:6px; font-weight:400}
+.gmeta{font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.6}
+.gmeta .gap{color:#B03060; font-weight:600}
+:root[data-theme="lab"] .gmeta .gap{color:#F0A0B0}
+.gmeta .ok{color:var(--ink); font-weight:600}
+.chips{display:flex; flex-wrap:wrap; gap:4px; margin-top:9px}
+.chip{font-family:ui-monospace,Consolas,monospace; font-size:10.5px; padding:2px 6px;
+  border-radius:3px; background:var(--bg); border:var(--lw) solid var(--line); color:var(--ink)}
+.sub{margin-top:11px; border-top:var(--lw) solid var(--line); padding-top:9px}
+.sub li{list-style:none; padding:8px 0; border-top:var(--lw) solid var(--line); font-size:12.5px}
+.sub li:first-child{border-top:0}
+.sub .t{color:var(--ink); font-weight:600}
+.empty{padding:60px 26px; color:var(--muted); text-align:center}
+
+.picker{position:fixed; right:20px; bottom:18px; display:flex; gap:6px; align-items:center;
   background:var(--panel); border:var(--lw) solid var(--line); padding:7px 10px;
-  border-radius:999px; font-size:11px; color:var(--muted);
-}
+  border-radius:999px; font-size:11px; color:var(--muted); z-index:5}
 .sw{width:20px; height:20px; border-radius:50%; cursor:pointer; border:2px solid var(--line)}
 .sw[aria-pressed="true"]{border-color:var(--ink); transform:scale(1.12)}
-.warn{color:#B03060}
-:root[data-theme="lab"] .warn{color:#F0A0B0}
 </style>
 </head>
 <body>
+
 <header>
   <span class="mark">OptiPlot</span>
-  <span class="sub">光学科研绘图工作台</span>
-  <span class="right" id="status">本地处理 · 未做平滑、归一化或自动拟合</span>
+  <nav>
+    <button data-view="work" aria-current="true">工作台</button>
+    <button data-view="lib">图型库</button>
+  </nav>
+  <span class="hright" id="status">本地处理 · 未做平滑、归一化或自动拟合</span>
 </header>
 
-<main>
+<!-- ══ 工作台 ══════════════════════════════════════════════════════ -->
+<main class="view" id="work" data-on="true">
   <aside>
     <section>
-      <h2>数据</h2>
+      <h2>导入数据</h2>
+      <label class="drop" id="drop" for="file">
+        <b>选择数据文件</b>
+        <span>或拖到这里<br>CSV · TSV · TXT · XLSX · NPY · MAT</span>
+      </label>
+      <input type="file" id="file" accept=".csv,.tsv,.txt,.dat,.xlsx,.xls,.npy,.mat">
+      <div class="ord" style="margin-top:10px">
+        <select id="ds" title="或改用内置模拟数据"></select>
+      </div>
+      <label class="f check" style="margin-top:8px">
+        <input type="checkbox" id="hdr" checked><label for="hdr" style="font-size:12px">首行为列名</label>
+      </label>
       <div class="dataline"><b id="dsname"></b><span id="dssum"></span></div>
-      <select id="ds" style="margin-top:10px;width:100%;background:var(--field);
-        border:var(--lw) solid var(--line);color:var(--field-ink);padding:5px 8px;border-radius:3px;font-size:13px">
-      </select>
-      <details id="checkwrap"><summary>数据检查</summary><div class="body" id="check"></div></details>
+      <details><summary>数据检查</summary><div class="body" id="check"></div></details>
     </section>
     <section>
       <h2>候选图形</h2>
@@ -172,18 +188,18 @@ details[open] summary{margin-bottom:11px}
     <div class="figure"><img id="fig" alt="图形预览"></div>
     <p class="caption" id="caption"></p>
 
-    <details><summary>画法参考</summary>
-      <div class="body" id="cases"></div>
-    </details>
+    <details><summary>这个图型在图型库里的画法</summary>
+      <div class="body" id="cases"></div></details>
 
     <div class="controls">
       <div class="f"><label>X / θ</label><select id="cx"></select></div>
       <div class="f"><label>Y / R</label><select id="cy"></select></div>
       <div class="f"><label>Z / 误差 / 分组</label><select id="cz"></select></div>
-      <div class="f"><label>尺寸</label>
-        <select id="cs"><option>single · 88.9mm</option><option selected>double · 182.9mm</option>
-        <option>slide · 16:9</option></select></div>
-      <div class="f"><label>拟合</label><select id="cf"><option>none</option><option>linear</option></select></div>
+      <div class="f"><label>尺寸</label><select id="csz">
+        <option>single 88.9mm</option><option selected>double 182.9mm</option>
+        <option>slide 16:9</option></select></div>
+      <div class="f"><label>拟合</label><select id="cf">
+        <option>none</option><option>linear</option></select></div>
       <div class="f check"><input type="checkbox" id="clog"><label for="clog">对数轴</label></div>
       <div class="actions">
         <button class="btn">PNG / SVG / PDF</button>
@@ -192,116 +208,187 @@ details[open] summary{margin-bottom:11px}
     </div>
 
     <details><summary>标题与坐标轴标签</summary>
-      <div class="controls" style="border:0;padding-top:6px">
-        <div class="f"><label>标题</label><input placeholder="留空则不绘制"></div>
-        <div class="f"><label>X 标签</label><input placeholder="列名不会自动赋予单位"></div>
-        <div class="f"><label>Y 标签</label><input placeholder="导出前请填真实物理量与单位"></div>
-      </div>
-    </details>
+      <div class="controls" style="border:0;padding-top:4px">
+        <div class="f"><label>标题</label><input type="text" placeholder="留空则不绘制"></div>
+        <div class="f"><label>X 标签</label><input type="text" placeholder="列名不会自动带单位"></div>
+        <div class="f"><label>Y 标签</label><input type="text" placeholder="导出前填真实物理量与单位"></div>
+      </div></details>
 
-    <details><summary>本设计的三条约束</summary>
+    <details><summary>本稿未实现的部分</summary>
       <div class="body">
-        <p>① <b>数据颜色不随界面主题变化。</b>曲线始终使用 Okabe-Ito 色盲安全调色板
-        （<code>#0072B2 #D55E00 #009E73 #CC79A7 #E69F00 #56B4E9</code>），换肤只改外壳，
-        否则导出图会随界面设置改变，破坏可复现性。</p>
-        <p>② <b>深色主题下图形卡片仍保持白底。</b>Matplotlib 输出为白底，若跟随深色会显得
-        像未加载完成；投稿用图本来也要求白底。</p>
-        <p>③ <b>次要内容一律进抽屉。</b>数据检查、案例库、标题标签默认收起，
-        主区只保留"图 + 变量映射 + 导出"这一条主轴。</p>
-      </div>
-    </details>
+        <p class="warn">这是界面稿，不是可运行的产品。</p>
+        <p>· 文件选择只读出文件名，剖析与渲染需要 N7 的 FastAPI 后端才真正工作；
+        现在看到的图全部来自内置的 9 份模拟样例。</p>
+        <p>· 参数条仍是现状的 10 项。字体、线宽、线型、标记、图例、刻度、色带属于
+        N3a 图型无关参数系统，尚未实现。</p>
+        <p>· 图型库的 13 张预览由 <code>render.py</code> 用真实引擎渲染，
+        小类来自 <code>catalog/styles.json</code>。</p>
+      </div></details>
   </div>
 </main>
 
+<!-- ══ 图型库 ══════════════════════════════════════════════════════ -->
+<main class="view" id="lib">
+  <div class="libbar">
+    <input id="q" type="search" placeholder="搜索图型、需要的数据列或画法，例如「偏振」「双轴」「SEM」「error_bar」">
+    <span class="cnt" id="cnt"></span>
+  </div>
+  <div class="grid" id="grid"></div>
+</main>
+
 <div class="picker">配色
-  <button class="sw" data-t="ink"      style="background:#17324D" title="Ink · 沿用现有色"></button>
-  <button class="sw" data-t="paper"    style="background:#FBFBFA" title="Paper · 最克制"></button>
-  <button class="sw" data-t="stone"    style="background:#A16207" title="Stone · 暖灰"></button>
-  <button class="sw" data-t="lab"      style="background:#101418" title="Lab · 深色"></button>
-  <button class="sw" data-t="contrast" style="background:linear-gradient(90deg,#000 50%,#004E8B 50%)" title="High contrast · WCAG AAA"></button>
+  <button class="sw" data-t="ink" style="background:#17324D" title="Ink"></button>
+  <button class="sw" data-t="paper" style="background:#FBFBFA" title="Paper"></button>
+  <button class="sw" data-t="stone" style="background:#A16207" title="Stone"></button>
+  <button class="sw" data-t="lab" style="background:#101418" title="Lab 深色"></button>
+  <button class="sw" data-t="contrast" style="background:linear-gradient(90deg,#000 50%,#004E8B 50%)" title="高对比"></button>
 </div>
 
 <script id="data" type="application/json">__DATA__</script>
 <script>
 const D = JSON.parse(document.getElementById('data').textContent);
-// 按数据集聚合候选
+const el = id => document.getElementById(id);
+const TIER_RANK = {high:0, medium:1, low:2};
+const NAMES = {
+  sample_spectrum:'光谱扫描 151×4', sample_beam_map:'二维光束扫描', sample_replicates:'重复测量',
+  sample_polarization:'偏振角度响应', sample_devices:'器件分组比较', sample_dense_scatter:'高密度散点',
+  sample_workflow:'工作流程边列表', sample_explicit_error:'显式 SEM 误差列', sample_matrix:'二维数组 NPY'};
+
+/* ── 视图切换 ─────────────────────────────────────────────────── */
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x =>
+    x.setAttribute('aria-current', String(x === b)));
+  document.querySelectorAll('.view').forEach(v =>
+    v.dataset.on = String(v.id === b.dataset.view));
+});
+
+/* ── 工作台 ───────────────────────────────────────────────────── */
 const groups = {};
 for (const [key, f] of Object.entries(D.figs)) {
   const ds = key.split('__')[0];
   (groups[ds] ||= []).push({key, ...f});
 }
-const NAMES = {
-  sample_spectrum:'光谱扫描 151×4', sample_beam_map:'二维光束扫描', sample_replicates:'重复测量',
-  sample_polarization:'偏振角度响应', sample_devices:'器件分组比较', sample_dense_scatter:'高密度散点',
-  sample_workflow:'工作流程边列表', sample_explicit_error:'显式 SEM 误差列'
-};
-const TIER_RANK = {high:0, medium:1, low:2};
-const el = id => document.getElementById(id);
-let cur = null;
-
 function fillSelect(sel, cols, val){
   sel.innerHTML = '';
   for (const c of [''].concat(cols)) {
-    const o = document.createElement('option');
-    o.value = o.textContent = c; sel.appendChild(o);
+    const o = document.createElement('option'); o.value = o.textContent = c; sel.appendChild(o);
   }
   if (val != null) sel.value = val;
 }
-
 function show(ds, rec){
-  cur = rec;
   el('fig').src = rec.file;
   el('dsname').textContent = ds + '.csv';
-  el('dssum').textContent = NAMES[ds] || '';
-  el('caption').innerHTML = `<b>${rec.title}</b> · 推荐等级 ${rec.tier_label}<br>${rec.reason}`;
+  el('dssum').textContent = (NAMES[ds]||'') + (ds === el('file').dataset.picked ? '（已换成你的文件）' : '');
+  el('caption').innerHTML =
+    `<b>${rec.title}</b> · 推荐等级 ${rec.tier_label}<br>${rec.reason}`;
   document.querySelectorAll('.cands button').forEach(b =>
-    b.setAttribute('aria-current', b.dataset.key === rec.key ? 'true' : 'false'));
-
-  // 案例库
-  const cs = D.cases[rec.id] || [];
+    b.setAttribute('aria-current', String(b.dataset.key === rec.key)));
+  const cs = (D.lib[rec.id]||{}).subtypes || [];
   el('cases').innerHTML = cs.length ? cs.map(c =>
-    `<div class="case"><div class="t">${c.label||''}</div>
-     需要数据列：<code>${c.data_schema||'—'}</code><br>${c.recipe||''}</div>`).join('')
-    : '<span class="warn">当前数据没有适配此图型的画法记录。</span>';
-
-  // 变量映射（演示：从编码契约回填）
+    `<div style="padding:9px 0;border-top:1px solid var(--line)">
+       <div class="t" style="color:var(--ink);font-weight:600">${c.label}</div>
+       需要数据列：<code>${c.data_schema}</code><br>${c.recipe}</div>`).join('')
+    : '<span class="warn">该图型暂无小类记录。</span>';
   const e = rec.encodings || {};
   const cols = Object.values(e).flat().filter(v => typeof v === 'string');
   fillSelect(el('cx'), cols, e.x ?? e.theta ?? e.source ?? cols[0]);
   fillSelect(el('cy'), cols, Array.isArray(e.y) ? e.y[0] : (e.y ?? e.r ?? e.value ?? e.target));
   fillSelect(el('cz'), cols, e.z ?? e.error ?? e.group);
 }
-
 function renderDs(ds){
   el('cands').innerHTML = '';
   const list = groups[ds].slice().sort((a,b) => TIER_RANK[a.tier] - TIER_RANK[b.tier]);
   for (const r of list) {
     const li = document.createElement('li');
-    li.innerHTML = `<button data-key="${r.key}"><span class="score">${r.tier_label}</span>
+    li.innerHTML = `<button data-key="${r.key}"><span class="tier">${r.tier_label}</span>
       <span>${r.title}</span></button>`;
     li.querySelector('button').onclick = () => show(ds, r);
     el('cands').appendChild(li);
   }
   show(ds, list[0]);
 }
-
 el('ds').innerHTML = Object.keys(groups).map(d =>
-  `<option value="${d}">${NAMES[d]||d}</option>`).join('');
-el('ds').onchange = ev => renderDs(ev.target.value);
+  `<option value="${d}">或改用模拟数据：${NAMES[d]||d}</option>`).join('');
+el('ds').onchange = ev => { el('file').dataset.picked = ''; renderDs(ev.target.value); };
 
+/* 导入：真实入口。界面稿只取文件名，剖析需 N7 后端 */
+el('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  el('file').dataset.picked = f.name;
+  el('dsname').textContent = f.name;
+  el('dssum').textContent = '界面稿只演示入口；剖析与渲染需后端';
+  el('status').textContent = '已选择 ' + f.name;
+};
+const drop = el('drop');
+['dragover','dragenter'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.dataset.hot = 'true'; }));
+['dragleave','drop'].forEach(t => drop.addEventListener(t, e => {
+  e.preventDefault(); drop.dataset.hot = 'false'; }));
+drop.addEventListener('drop', e => {
+  const f = e.dataTransfer?.files?.[0]; if (!f) return;
+  el('file').dataset.picked = f.name;
+  el('dsname').textContent = f.name;
+  el('dssum').textContent = '界面稿只演示入口；剖析与渲染需后端';
+  el('status').textContent = '已选择 ' + f.name;
+});
+
+/* ── 图型库 ───────────────────────────────────────────────────── */
+function renderLib(){
+  const q = el('q').value.trim().toLowerCase();
+  const grid = el('grid'); grid.innerHTML = '';
+  let shown = 0;
+  for (const [id, item] of Object.entries(D.lib)) {
+    const blob = (id + ' ' + item.title + ' ' +
+      item.subtypes.map(s => s.label + ' ' + s.data_schema + ' ' + s.recipe).join(' ')).toLowerCase();
+    const hit = !q || blob.includes(q);
+    const subs = q ? item.subtypes.filter(s =>
+      (s.label + s.data_schema + s.recipe).toLowerCase().includes(q)) : item.subtypes;
+    if (!hit && !subs.length) continue;
+    shown++;
+    const cols = [...new Set(item.subtypes.flatMap(s =>
+      s.data_schema.split(',').map(v => v.trim()).filter(Boolean)))].slice(0, 8);
+    const card = document.createElement('article');
+    card.className = 'gcard';
+    card.innerHTML = `<img src="${item.preview}" alt="${item.title}" loading="lazy">
+      <div class="gbody"><h3>${item.title}<span class="gid">${id}</span></h3>
+      <div class="gmeta">${item.subtypes.length
+        ? `<span class="ok">${item.subtypes.length} 种画法</span>`
+        : '<span class="gap">尚无画法记录 — 该图型是空白区</span>'} · 常见数据列
+        <div class="chips">${cols.map(c=>`<span class="chip">${c}</span>`).join('')}</div></div>
+      <details><summary>展开 ${item.subtypes.length} 种画法</summary>
+        <ul class="sub">${subs.map(s =>
+          `<li><span class="t">${s.label}</span><br>
+           <code>${s.data_schema}</code><br>${s.recipe}</li>`).join('') || '<li>无匹配画法</li>'}
+        </ul></details>
+      <button class="btn" style="margin-top:11px;width:100%">用我的数据试这个图型</button>
+      </div>`;
+    card.querySelector('button').onclick = () => {
+      const match = Object.values(groups).flat().find(r => r.id === id);
+      document.querySelector('nav button[data-view="work"]').click();
+      if (match) { renderDs(match.key.split('__')[0]); show(match.key.split('__')[0], match); }
+      el('status').textContent = '图型库 → 工作台：' + item.title;
+    };
+    grid.appendChild(card);
+  }
+  el('cnt').textContent = shown + ' / ' + Object.keys(D.lib).length + ' 个图型';
+  if (!shown) grid.innerHTML = '<div class="empty">没有匹配的图型或画法。试试「热图」「误差」「偏振」。</div>';
+}
+el('q').oninput = renderLib;
+
+/* ── 主题 ─────────────────────────────────────────────────────── */
 document.querySelectorAll('.sw').forEach(b => b.onclick = () => {
   document.documentElement.dataset.theme = b.dataset.t;
   document.querySelectorAll('.sw').forEach(x =>
-    x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    x.setAttribute('aria-pressed', String(x === b)));
 });
-document.querySelector('.sw[data-t="ink"]').setAttribute('aria-pressed','true');
-document.documentElement.dataset.theme = 'ink';
+document.querySelector('.sw[data-t="paper"]').setAttribute('aria-pressed','true');
+document.documentElement.dataset.theme = 'paper';
 
-// 数据检查（演示：把推荐理由里的告警拆成条目）
-el('check').innerHTML = `<p class="warn">发现 2 个待确认项</p>
-  <p>· <code>angle_deg</code> 未注明单位约定，暂按度显示，请在设置中确认。</p>
-  <p>· 共有 3 个缺失单元格；各图仅使用相关列的有效观测，不自动插值。</p>`;
+el('check').innerHTML = `<p class="warn">2 个待确认项</p>
+  <p>· <code>angle_deg</code> 未注明单位约定，暂按度显示，请确认。</p>
+  <p>· 3 个缺失单元格；各图只用相关列的有效观测，不自动插值。</p>`;
 renderDs('sample_spectrum');
+renderLib();
 </script>
 </body>
 </html>

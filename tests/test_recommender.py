@@ -281,6 +281,31 @@ class FileInputTestCase(unittest.TestCase):
             self.assertEqual(p.columns, ["x", "y"])
 
 
+    def test_density_is_not_offered_for_a_measurement_grid(self):
+        """Hexbin counts samples per region; on a complete grid each cell holds
+        one sample, so the density map is uniform and says nothing."""
+        grid = pd.DataFrame(
+            {
+                "x_um": np.tile(np.arange(40, dtype=float), 40),
+                "y_um": np.repeat(np.arange(40, dtype=float), 40),
+                "intensity_au": np.random.default_rng(3).normal(size=1600),
+            }
+        )
+        p = analyze_dataframe(grid)
+        self.assertTrue(p.grid_like)
+        self.assertNotIn("density", {r.id for r in recommend(p)})
+        self.assertIn("heatmap", {r.id for r in recommend(p)})
+
+        cloud = pd.DataFrame(
+            {
+                "power_mW": np.random.default_rng(4).uniform(0, 5, 2000),
+                "noise_dB": np.random.default_rng(5).normal(0, 1, 2000),
+            }
+        )
+        c = analyze_dataframe(cloud)
+        self.assertFalse(c.grid_like)
+        self.assertIn("density", {r.id for r in recommend(c)})
+
     def test_no_numeric_score_can_creep_back(self):
         """Tiers replaced numeric scores on purpose: a 1-point gap reads as
         confidence the ranking never had."""
