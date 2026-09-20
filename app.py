@@ -113,7 +113,7 @@ class App(tk.Tk):
         )
         self.rec_list.pack(fill="x")
         self.rec_list.bind("<<ListboxSelect>>", self.on_select)
-        self.reason = tk.StringVar(value="推荐分为规则适配分，不是统计置信度。")
+        self.reason = tk.StringVar(value="推荐等级表示数据满足该图型前提的程度，不是统计置信度。")
         ttk.Label(self.sidebar, textvariable=self.reason, wraplength=265, justify="left").pack(
             anchor="w", pady=12
         )
@@ -243,7 +243,7 @@ class App(tk.Tk):
         self.recs = recs
         self.rec_list.delete(0, "end")
         for r in recs:
-            self.rec_list.insert("end", f"{r.score:>3}   {r.title}")
+            self.rec_list.insert("end", f"{r.tier_label}   {r.title}")
         self.summary.set(
             f"{Path(path).name}\n{p.n_rows:,} 行 × {p.n_cols} 列 · {len(p.numeric_columns)} 个数值变量\n"
             + "\n".join(p.notes[:3])
@@ -300,7 +300,7 @@ class App(tk.Tk):
             card.grid(row=i // 2, column=i % 2, sticky="nsew", padx=5, pady=5)
             tk.Label(
                 card,
-                text=f"{r.title}   ·   {r.score} 分",
+                text=f"{r.title}   ·   推荐等级 {r.tier_label}",
                 bg="white",
                 fg=INK,
                 font=("Microsoft YaHei", 12, "bold"),

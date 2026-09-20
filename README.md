@@ -43,7 +43,7 @@ from optiplot.render import render
 
 profile = analyze_file("examples/sample_spectrum.csv")
 for choice in recommend(profile):
-    print(choice.title, choice.score, choice.reason)
+    print(choice.title, choice.tier_label, choice.reason)
 render(profile, recommend(profile)[0], "figure.svg", options={"size": "double"})
 ```
 
@@ -66,7 +66,7 @@ A column named `sample_A` is not given units automatically — write the real ax
 
 ## Limits of this version
 
-Scores are transparent rule-based rankings, **not statistical confidence**, and they do not certify a scientific conclusion. The software never decides your physical model, normalisation or significance test.
+Tiers (high / medium / low) state how completely your data meets each figure type's preconditions. They are **not statistical confidence**, and they do not certify a scientific conclusion. The software never decides your physical model, normalisation or significance test.
 
 - Lines keep acquisition order and gaps. Nothing is smoothed or fitted automatically.
 - Error bars use only explicit error columns or genuine repeated observations, computed per group. Single-point groups get no invented uncertainty.
@@ -156,7 +156,7 @@ from optiplot.render import render
 profile = analyze_file("examples/sample_spectrum.csv")
 choices = recommend(profile)
 for choice in choices:
-    print(choice.title, choice.score, choice.reason)
+    print(choice.title, choice.tier_label, choice.reason)
 render(profile, choices[0], "figure.svg", options={"size": "double"})
 ```
 
@@ -164,7 +164,7 @@ render(profile, choices[0], "figure.svg", options={"size": "double"})
 
 ## 科研表达的边界
 
-推荐分数是透明规则的排序分，不是统计置信度，也不证明图中的科学结论。程序不替用户决定物理模型、归一化方式或显著性检验。
+推荐等级（高 / 中 / 低）表示数据满足该图型前提条件的程度，不是统计置信度，也不证明图中的科学结论。程序不替用户决定物理模型、归一化方式或显著性检验。
 
 - 折线保留采集顺序与缺失间断；不自动平滑或拟合。
 - 误差棒只使用显式误差列或真实重复观测，分组分别统计；单点组不虚构误差。

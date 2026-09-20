@@ -9,6 +9,7 @@ import pandas as pd
 from scipy.io import savemat
 
 from optiplot import analyze_dataframe, analyze_file, recommend
+from optiplot.core import TIER_LABELS, TIER_ORDER
 
 
 class RecommenderTestCase(unittest.TestCase):
@@ -203,9 +204,8 @@ class RecommenderTestCase(unittest.TestCase):
         )
         suggestions = recommend(p)
         self.assertLessEqual(len(suggestions), 8)
-        self.assertEqual(
-            [r.score for r in suggestions], sorted([r.score for r in suggestions], reverse=True)
-        )
+        keys = [(TIER_ORDER.index(r.tier), r.rank) for r in suggestions]
+        self.assertEqual(keys, sorted(keys), "recommendations must order by tier, then rank")
         for rec in suggestions:
             for key in (
                 "x",
@@ -279,6 +279,16 @@ class FileInputTestCase(unittest.TestCase):
             p = analyze_file(root / "sample.xlsx", sheet_name="Experiment")
             self.assertEqual(p.n_rows, 2)
             self.assertEqual(p.columns, ["x", "y"])
+
+
+    def test_no_numeric_score_can_creep_back(self):
+        """Tiers replaced numeric scores on purpose: a 1-point gap reads as
+        confidence the ranking never had."""
+        for path in sorted((Path(__file__).resolve().parents[1] / "examples").glob("*.csv")):
+            for rec in recommend(analyze_file(path)):
+                self.assertIn(rec.tier, TIER_ORDER)
+                self.assertEqual(rec.tier_label, TIER_LABELS[rec.tier])
+                self.assertFalse(hasattr(rec, "score"), f"{rec.id} still exposes a score")
 
 
 if __name__ == "__main__":

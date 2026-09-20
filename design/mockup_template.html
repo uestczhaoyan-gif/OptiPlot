@@ -164,7 +164,7 @@ details[open] summary{margin-bottom:11px}
     <section>
       <h2>候选图形</h2>
       <ul class="cands" id="cands"></ul>
-      <p class="note">分数是结构适配排序，不是统计置信度。</p>
+      <p class="note">等级表示数据满足该图型前提的程度，不是统计置信度。</p>
     </section>
   </aside>
 
@@ -235,6 +235,7 @@ const NAMES = {
   sample_polarization:'偏振角度响应', sample_devices:'器件分组比较', sample_dense_scatter:'高密度散点',
   sample_workflow:'工作流程边列表', sample_explicit_error:'显式 SEM 误差列'
 };
+const TIER_RANK = {high:0, medium:1, low:2};
 const el = id => document.getElementById(id);
 let cur = null;
 
@@ -252,7 +253,7 @@ function show(ds, rec){
   el('fig').src = rec.file;
   el('dsname').textContent = ds + '.csv';
   el('dssum').textContent = NAMES[ds] || '';
-  el('caption').innerHTML = `<b>${rec.title}</b> · ${rec.score} 分<br>${rec.reason}`;
+  el('caption').innerHTML = `<b>${rec.title}</b> · 推荐等级 ${rec.tier_label}<br>${rec.reason}`;
   document.querySelectorAll('.cands button').forEach(b =>
     b.setAttribute('aria-current', b.dataset.key === rec.key ? 'true' : 'false'));
 
@@ -273,10 +274,10 @@ function show(ds, rec){
 
 function renderDs(ds){
   el('cands').innerHTML = '';
-  const list = groups[ds].slice().sort((a,b) => b.score - a.score);
+  const list = groups[ds].slice().sort((a,b) => TIER_RANK[a.tier] - TIER_RANK[b.tier]);
   for (const r of list) {
     const li = document.createElement('li');
-    li.innerHTML = `<button data-key="${r.key}"><span class="score">${r.score}</span>
+    li.innerHTML = `<button data-key="${r.key}"><span class="score">${r.tier_label}</span>
       <span>${r.title}</span></button>`;
     li.querySelector('button').onclick = () => show(ds, r);
     el('cands').appendChild(li);

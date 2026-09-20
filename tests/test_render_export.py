@@ -78,7 +78,7 @@ def test_portable_export_runs_without_project(tmp_path):
 
 def test_negative_uncertainty_is_rejected():
     p = analyze_dataframe(pd.DataFrame({"x": [1, 2, 3], "y": [1, 2, 4], "sd": [0.1, -0.1, 0.2]}))
-    r = Recommendation("errorbar", "error", 1, "test", {"x": "x", "y": "y", "error": "sd"})
+    r = Recommendation("errorbar", "error", "high", "test", {"x": "x", "y": "y", "error": "sd"})
     with pytest.raises(ValueError, match="负"):
         render(p, r)
 

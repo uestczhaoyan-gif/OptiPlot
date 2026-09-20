@@ -41,13 +41,31 @@ class DataProfile:
     matrix_like: bool = False
 
 
+TIER_LABELS = {"high": "高", "medium": "中", "low": "低"}
+TIER_ORDER = ("high", "medium", "low")
+
+
 @dataclass(frozen=True)
 class Recommendation:
+    """One drawable option.
+
+    `tier` states how well the data meets this figure type's preconditions:
+    high means every precondition holds, medium means it can be drawn but rests
+    on an assumption the user should confirm, low means it is technically
+    available and usually not the best expression. `rank` only breaks ties
+    inside a tier and is not shown to users.
+    """
+
     id: str
     title: str
-    score: int
+    tier: str
     reason: str
     encodings: dict = field(default_factory=dict)
+    rank: int = 0
+
+    @property
+    def tier_label(self) -> str:
+        return TIER_LABELS[self.tier]
 
 
 def _tokens(name: str) -> set[str]:
@@ -386,12 +404,11 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         if c not in p.constant_columns and c not in p.id_columns and c not in p.error_columns
     ]
 
-    def add(identifier, title, score, reason, encodings):
-        out.append(
-            Recommendation(
-                identifier, title, score, reason + "（结构启发式评分，非科学结论。）", encodings
-            )
-        )
+    def add(identifier, title, tier, reason, encodings, rank):
+        out.append(Recommendation(identifier, title, tier, reason, encodings, rank))
+
+    def by_tier(items):
+        return sorted(items, key=lambda r: (TIER_ORDER.index(r.tier), r.rank))[:8]
 
     if (
         p.source_column
@@ -405,13 +422,21 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             add(
                 "flow",
                 "流程 / 关系图",
-                98,
+                "high",
                 "存在 source/target 边列表，节点和箭头可直接由已提供关系构建",
                 {"source": p.source_column, "target": p.target_column},
+                0,
             )
     if p.n_rows == 1:
-        add("table", "数据表", 85, "只有一行观测，表格可完整保留数值与标签", {"columns": p.columns})
-        return sorted(out, key=lambda r: r.score, reverse=True)[:8]
+        add(
+            "table",
+            "数据表",
+            "high",
+            "只有一行观测，表格可完整保留数值与标签",
+            {"columns": p.columns},
+            0,
+        )
+        return by_tier(out)
 
     group = next(
         (c for c in p.categorical_columns if 2 <= data[c].nunique() <= min(12, p.n_rows // 2)), None
@@ -423,9 +448,10 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         add(
             "matrix_heatmap",
             "数组矩阵热图",
-            93,
+            "high",
             "导入的是二维无坐标数组，可按行列索引预览数值；请确认行列对应的物理含义",
             {"columns": p.numeric_columns},
+            3,
         )
     if p.grid_like and len(p.grid_columns) == 3:
         gx, gy, gz = p.grid_columns
@@ -433,11 +459,20 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         add(
             "heatmap",
             "二维参数热图",
-            97,
+            "high",
             "两个坐标列的唯一观测覆盖完整网格，颜色可编码第三个测量量",
             enc,
+            1,
         )
-        add("contour", "填色等高线", 87, "完整的二维网格支持等值线；无须猜测缺失采样点", enc.copy())
+        add(
+            "contour",
+            "填色等高线",
+            "medium",
+            "完整的二维网格支持等值线；填色会在采样点之间插值，"
+            "若采样间隔内物理量并不连续请改用热图",
+            enc.copy(),
+            1,
+        )
 
     if p.angle_columns and not p.grid_like:
         theta = p.angle_columns[0]
@@ -455,9 +490,10 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             add(
                 "polar",
                 "极坐标响应图",
-                98,
+                "high",
                 "列名含角度信息且径向值非负；请核对角度单位及周期含义",
                 enc,
+                2,
             )
 
     if x and y and _valid_count(data, [x, y]) >= 2:
@@ -467,17 +503,19 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         add(
             "scatter_fit",
             "散点关系图",
-            77,
+            "medium",
             "至少两个数值变量有配对观测，可检查关系；默认不拟合",
             enc,
+            3,
         )
         if _valid_count(data, [x, y]) >= 300:
             add(
                 "density",
                 "二维密度 / 六边形分箱",
-                89,
+                "high",
                 "配对观测较多，分箱可减轻散点重叠；颜色表示各区域样本数",
                 {"x": x, "y": y},
+                5,
             )
         line_ys = [c for c in responses if _valid_count(data, [x, c]) >= 3]
         keys = [x] + ([group] if group else [])
@@ -495,9 +533,10 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             add(
                 "spectrum_lines",
                 "有序响应 / 光谱曲线",
-                91,
+                "high",
                 "横轴名称含扫描轴信息，或观测按横轴有序；曲线显示采样点间变化",
                 enc,
+                6,
             )
 
     error_added = False
@@ -515,9 +554,10 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 add(
                     "errorbar",
                     f"均值与显式 {info['kind'].upper()} 误差棒",
-                    95,
+                    "high",
                     "存在与响应列配对且非负的误差列，保留其已有统计定义",
                     enc,
+                    4,
                 )
                 error_added = True
                 break
@@ -532,20 +572,23 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             add(
                 "errorbar",
                 "重复观测均值 ± SD",
-                94,
+                "medium",
                 "至少两个横轴取值具有组内重复观测，可计算样本标准差；请确认这些确为重复实验",
                 enc,
+                0,
             )
 
     if eligible:
         value = y or eligible[0]
         if data[value].notna().sum() >= 3:
+            only_number = len(eligible) == 1
             add(
                 "distribution",
                 "数值分布直方图",
-                73 if len(eligible) == 1 else 62,
+                "medium" if only_number else "low",
                 "有效观测可用直方图检查分布和离群值；分箱会影响外观",
                 {"value": value},
+                4 if only_number else 1,
             )
         if group and _valid_count(data, [group, value]) >= 4:
             sizes = data[[group, value]].dropna().groupby(group, observed=True)[value].count()
@@ -553,9 +596,10 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 add(
                     "box",
                     "分组箱线图与原始点",
-                    88,
+                    "high",
                     "分类列中至少两组有重复数值观测，可比较中位数、四分位与原始点",
                     {"group": group, "value": value},
+                    7,
                 )
     if len(eligible) >= 3 and p.n_rows >= 5:
         # Bound pairwise inspection for wide detector/spectral arrays. The GUI
@@ -572,15 +616,18 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             add(
                 "correlation",
                 "数值变量相关矩阵",
-                69,
+                "low",
                 "多个变化数值列可检查线性相关；使用成对有效观测，相关不代表因果",
                 {"columns": used[:16]},
+                0,
             )
+    only_table_works = not eligible
     add(
         "table",
         "数据表",
-        48 if eligible else 85,
+        "high" if only_table_works else "low",
         "表格保留原始标签、数值与缺失项，适合逐项核对和小样本呈现",
         {"columns": p.columns},
+        0 if only_table_works else 2,
     )
-    return sorted(out, key=lambda r: r.score, reverse=True)[:8]
+    return by_tier(out)

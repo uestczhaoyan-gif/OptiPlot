@@ -36,7 +36,8 @@ for fname, kinds in wanted.items():
         try:
             render(profile, rec, out / f"{name}.svg", options={"size": "double"}).clear()
             index[name] = {"file": f"assets/{name}.svg", "title": rec.title,
-                           "score": rec.score, "reason": rec.reason, "id": kind,
+                           "tier": rec.tier, "tier_label": rec.tier_label,
+                           "reason": rec.reason, "id": kind,
                            "encodings": dict(rec.encodings)}
             print(f"  ok   {name}")
         except Exception as exc:
