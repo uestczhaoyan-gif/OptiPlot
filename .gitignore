@@ -12,3 +12,8 @@ catalog/incoming/
 .env
 design/assets/
 design/mockup.html
+
+# Mined from the local Zotero library: raw figure-caption text is copyrighted
+# prose and must never be committed. Only hand-written recipes may reach catalog/.
+.cache/zotero_captions.jsonl
+zotero_captions.jsonl

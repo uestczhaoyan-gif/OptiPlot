@@ -55,8 +55,8 @@ h2{font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:upperca
   color:var(--muted); margin-bottom:9px}
 section+section{margin-top:22px; padding-top:18px; border-top:var(--lw) solid var(--line)}
 
-/* 导入：真实入口，不是只能挑 demo */
-.drop{border:1.5px dashed var(--line); border-radius:5px; padding:16px 12px;
+/* 导入：真实入口，不是只能挑 demo。label 默认 inline，必须块级化否则虚线框塌陷 */
+.drop{display:block; border:1.5px dashed var(--line); border-radius:5px; padding:16px 12px;
   text-align:center; cursor:pointer; background:var(--field)}
 .drop:hover,.drop[data-hot="true"]{border-color:var(--accent); background:var(--hover)}
 .drop b{display:block; font-size:14px; font-weight:600}
@@ -67,8 +67,8 @@ section+section{margin-top:22px; padding-top:18px; border-top:var(--lw) solid va
   font-size:14px; overflow-wrap:anywhere}
 select{background:var(--field); border:var(--lw) solid var(--line); color:var(--field-ink);
   padding:5px 8px; border-radius:3px; font-size:13px}
+aside select{width:100%}
 .ord{display:flex; gap:6px; width:100%}
-.ord select{flex:1; min-width:0}
 
 .cands{list-style:none; display:flex; flex-direction:column; gap:1px}
 .cands button{width:100%; text-align:left; background:none; border:0; cursor:pointer;
