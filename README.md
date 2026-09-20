@@ -80,7 +80,7 @@ Figure colours use the colourblind-safe Okabe-Ito palette and do not depend on i
 
 This is the **0.2.0 runnable preview**. The knowledge base is not 108 downloaded original figures and not a complete survey of Q1/Q2 journals; journal quartiles are explicitly marked unverified pending a list with year and evaluation scheme, and conferences are not given quartiles. The software is MIT-licensed; original paper images are not included in the source package.
 
-See the [roadmap](docs/roadmap.md) for what this project deliberately does not do and how to add a figure type, plus [architecture](docs/architecture.md), [contributing](CONTRIBUTING.md), [validation](docs/validation.md) and [literature provenance](docs/literature.md).
+See the [roadmap](docs/roadmap.md) for what this project deliberately does not do and how to add a figure type, the [figure inventory](docs/figure-inventory.md) for what else your data could be drawn as, plus [architecture](docs/architecture.md), [contributing](CONTRIBUTING.md), [validation](docs/validation.md) and [literature provenance](docs/literature.md).
 
 ---
 
@@ -186,4 +186,4 @@ python research/collect_openalex.py --query "metasurface photodetector" --query 
 
 这是候选题录检索，不是自动全文图像理解；本版没有把未经运行的采集上限计入已收集数量。可读全文和原图仍需核对图号、实际样式、授权和分区后入库。
 
-详见 [路线图](docs/roadmap.md)（本项目明确不做什么、以及新增图型的正确顺序）、[架构](docs/architecture.md)、[贡献说明](CONTRIBUTING.md) 和 [验证记录](docs/validation.md)。
+详见 [路线图](docs/roadmap.md)（本项目明确不做什么、以及新增图型的正确顺序）、[可绘图型清单](docs/figure-inventory.md)（给定数据还能画成什么）、[架构](docs/architecture.md)、[贡献说明](CONTRIBUTING.md) 和 [验证记录](docs/validation.md)。
