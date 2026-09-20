@@ -1,0 +1,18 @@
+# Normalise text files in the index, but keep Windows launchers byte-exact:
+# cmd.exe mis-parses batch files that carry bare LF line endings.
+* text=auto
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.npy binary
+*.zip binary
+
+*.py text
+*.json text
+*.md text
+*.toml text
+*.yml text
+*.csv text
