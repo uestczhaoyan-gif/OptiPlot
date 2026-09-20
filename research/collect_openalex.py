@@ -2,7 +2,7 @@
 """Fetch a bounded, cached OpenAlex metadata candidate set (standard library only).
 
 This does not download articles or images, infer journal quartiles, or certify a
-figure caption. Candidates stay separate from catalog/papers.json and cases.json.
+figure caption. Candidates stay separate from catalog/papers.json and styles.json.
 API documentation: https://developers.openalex.org/ ; https://docs.openalex.org/
 """
 from __future__ import annotations
@@ -251,9 +251,9 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--offline and --refresh cannot be combined")
     if args.output.resolve() in {
         (ROOT / "catalog" / "papers.json").resolve(),
-        (ROOT / "catalog" / "cases.json").resolve(),
+        (ROOT / "catalog" / "styles.json").resolve(),
     }:
-        p.error("candidate acquisition must not overwrite the curated papers/cases catalogs")
+        p.error("candidate acquisition must not overwrite the curated catalogs")
     try:
         payload = collect(args)
     except KeyboardInterrupt:

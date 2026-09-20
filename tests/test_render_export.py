@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from optiplot import analyze_file, analyze_dataframe, recommend, Recommendation
-from optiplot.render import render
+from optiplot.render import render, FIGURE_TYPES
 from optiplot.export import export_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -150,15 +150,31 @@ def test_angle_grid_prefers_grid_not_collapsed_polar():
     assert "polar" not in {r.id for r in recommend(p)}
 
 
-def test_catalog_links_and_counts():
+def test_styles_reference_real_figure_types():
+    styles = json.loads((ROOT / "catalog/styles.json").read_text(encoding="utf-8"))
+    assert len({s["id"] for s in styles}) == len(styles)
+    assert styles, "the figure-type library must not be empty"
+    for s in styles:
+        assert s["label"].strip() and s["data_schema"].strip() and s["recipe"].strip()
+        assert s["patterns"], f"{s['id']} names no figure type"
+        unknown = set(s["patterns"]) - set(FIGURE_TYPES)
+        assert not unknown, f"{s['id']} references unimplemented types {unknown}"
+
+
+def test_styles_carry_no_per_figure_provenance():
+    """The product draws figures; it does not cite papers under each one."""
+    styles = json.loads((ROOT / "catalog/styles.json").read_text(encoding="utf-8"))
+    allowed = {"id", "label", "patterns", "data_schema", "recipe"}
+    for s in styles:
+        assert set(s) == allowed, f"{s['id']} carries {set(s) - allowed}"
+    text = (ROOT / "catalog/styles.json").read_text(encoding="utf-8").lower()
+    for leak in ("doi.org", "evidence", "source_url", "paper_id", "visual_review"):
+        assert leak not in text, f"{leak} reappeared in styles.json"
+
+
+def test_papers_remain_valid_bibliography():
+    """papers.json is project-level evidence that the type set came from real
+    top-journal reading. It is deliberately not joined to styles.json."""
     papers = json.loads((ROOT / "catalog/papers.json").read_text(encoding="utf-8-sig"))
-    cases = json.loads((ROOT / "catalog/cases.json").read_text(encoding="utf-8-sig"))
     assert len({p["id"] for p in papers}) == len(papers)
-    assert len({c["id"] for c in cases}) == len(cases)
-    ids = {p["id"] for p in papers}
-    assert all(
-        c["paper_id"] in ids and c["source_url"].startswith("https://") and c["recipe"]
-        for c in cases
-    )
-    for p in papers:
-        assert p["case_count"] == sum(c["paper_id"] == p["id"] for c in cases)
+    assert all(p["title"] and p["venue"] and p["year"] for p in papers)

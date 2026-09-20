@@ -2,12 +2,10 @@
 
 from pathlib import Path
 import io
-import json
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from dataclasses import replace
-import webbrowser
 
 ROOT = Path(__file__).resolve().parent
 os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".cache" / "matplotlib"))
@@ -124,12 +122,10 @@ class App(tk.Tk):
         self.gallery_tab = ttk.Frame(self.tabs, padding=12)
         self.editor_tab = ttk.Frame(self.tabs, padding=10)
         self.data_tab = ttk.Frame(self.tabs, padding=10)
-        self.catalog_tab = ttk.Frame(self.tabs, padding=12)
         for tab, title in [
             (self.gallery_tab, "候选预览"),
             (self.editor_tab, "绘图与导出"),
             (self.data_tab, "数据检查"),
-            (self.catalog_tab, "论文图表案例"),
         ]:
             self.tabs.add(tab, text=title)
         self.gallery_canvas = tk.Canvas(self.gallery_tab, bg=BG, highlightthickness=0)
@@ -153,7 +149,6 @@ class App(tk.Tk):
             self.gallery, text="导入数据，自动比较多种表达方式。", font=("Microsoft YaHei", 18)
         ).pack(pady=100)
         self._build_editor()
-        self._build_catalog()
         self.status = tk.StringVar(value="就绪  |  未对数据做平滑、归一化或拟合")
         ttk.Label(self, textvariable=self.status, padding=(22, 8)).pack(side="bottom", fill="x")
         main.pack_forget()
@@ -227,99 +222,6 @@ class App(tk.Tk):
         ).pack(side="right", padx=5)
         ttk.Label(footer, text="ZIP：数据 + 脚本 + 参数 + 图片").pack(side="left")
         self.plot_frame.pack(fill="both", expand=True, pady=8)
-
-    def _build_catalog(self):
-        top = ttk.Frame(self.catalog_tab)
-        top.pack(fill="x")
-        self.search = tk.StringVar()
-        ttk.Entry(top, textvariable=self.search, width=45).pack(side="left")
-        ttk.Button(top, text="搜索案例", command=self.filter_catalog).pack(side="left", padx=8)
-        self.catalog_info = tk.StringVar()
-        ttk.Label(self.catalog_tab, textvariable=self.catalog_info, wraplength=850).pack(
-            anchor="w", pady=9
-        )
-        self.case_list = tk.Listbox(
-            self.catalog_tab, bg="white", fg=INK, font=("Microsoft YaHei", 10), height=14
-        )
-        self.case_list.pack(fill="both", expand=True)
-        self.case_list.bind("<<ListboxSelect>>", self.show_case)
-        self.case_detail = tk.Text(
-            self.catalog_tab,
-            height=10,
-            wrap="word",
-            font=("Microsoft YaHei", 10),
-            bg="white",
-            relief="flat",
-        )
-        self.case_detail.pack(fill="x", pady=9)
-        ttk.Button(self.catalog_tab, text="打开论文来源", command=self.open_source).pack(anchor="e")
-        self.case_url = None
-        ttk.Button(self.catalog_tab, text="用当前数据选择相应图型", command=self.apply_case).pack(
-            anchor="e", pady=4
-        )
-        self.filter_catalog()
-
-    def apply_case(self):
-        if not self.profile or not self.case_list.curselection():
-            messagebox.showinfo("先导入数据", "请先导入数据，并选中一条论文图表案例。")
-            return
-        case = self.filtered[self.case_list.curselection()[0]]
-        match = next(
-            (
-                i
-                for i, r in enumerate(self.recs)
-                if r.id in ["flow" if p == "flowchart" else p for p in case.get("patterns", [])]
-            ),
-            None,
-        )
-        if match is None:
-            messagebox.showinfo(
-                "需要其他数据结构", "当前数据没有适配此案例的图型。请参照案例的数据列格式。"
-            )
-        else:
-            self.select_rec(match)
-
-    def filter_catalog(self):
-        p = ROOT / "catalog" / "cases.json"
-        self.cases = []
-        if p.exists():
-            raw = json.loads(p.read_text(encoding="utf-8-sig"))
-            self.cases = raw if isinstance(raw, list) else raw.get("cases", [])
-        query = self.search.get().strip().lower()
-        self.filtered = [
-            c for c in self.cases if query in json.dumps(c, ensure_ascii=False).lower()
-        ]
-        self.case_list.delete(0, "end")
-        for c in self.filtered:
-            self.case_list.insert(
-                "end",
-                f"{c.get('figure', c.get('figure_label', 'Figure'))}  |  {c.get('label',c.get('title',c.get('paper_id','')))}",
-            )
-        self.catalog_info.set(
-            f"{len(self.cases)} 条结构化图表案例；检索标题、图型、变量或 DOI。分区以有年份、有体系的已核验记录为准。"
-        )
-
-    def show_case(self, event=None):
-        if not self.case_list.curselection():
-            return
-        c = self.filtered[self.case_list.curselection()[0]]
-        self.case_detail.delete("1.0", "end")
-        self.case_detail.insert(
-            "end",
-            f"{c.get('label','')}  ·  {c.get('figure','')}\n\n需要的数据：{c.get('data_schema','')}\n\n绘制方法：{c.get('recipe','')}\n\n图型：{', '.join(c.get('patterns',[]))}\n证据：{c.get('evidence','')}\n来源：{c.get('source_url','')}",
-        )
-        self.case_url = c.get("source_url", c.get("url"))
-        if not self.case_url:
-            papers = ROOT / "catalog" / "papers.json"
-            if papers.exists():
-                raw = json.loads(papers.read_text(encoding="utf-8-sig"))
-                rows = raw if isinstance(raw, list) else raw.get("papers", [])
-                paper = next((p for p in rows if p.get("id") == c.get("paper_id")), {})
-                self.case_url = paper.get("url", paper.get("source_url"))
-
-    def open_source(self):
-        if self.case_url and self.case_url.startswith("https://"):
-            webbrowser.open(self.case_url)
 
     def open_file(self):
         p = filedialog.askopenfilename(
@@ -443,12 +345,7 @@ class App(tk.Tk):
         e = self.active.encodings
         self.rec_list.selection_clear(0, "end")
         self.rec_list.selection_set(index)
-        matches = [
-            c
-            for c in self.cases
-            if self.active.id in ["flow" if p == "flowchart" else p for p in c.get("patterns", [])]
-        ]
-        self.reason.set(self.active.reason + f"\n\n案例库有 {len(matches)} 条相关画法。")
+        self.reason.set(self.active.reason)
         self.x.set(e.get("x", e.get("theta", e.get("source", ""))))
         y = e.get("y", e.get("r", e.get("value", e.get("target", ""))))
         self.y.set("; ".join(y) if isinstance(y, list) else y)

@@ -11,6 +11,24 @@ from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
 COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
+# The authoritative list of drawable figure types. A new branch in _draw is not
+# a supported figure type until it appears here; catalog/styles.json may only
+# reference these ids.
+FIGURE_TYPES = (
+    "spectrum_lines",
+    "scatter_fit",
+    "density",
+    "errorbar",
+    "heatmap",
+    "contour",
+    "matrix_heatmap",
+    "polar",
+    "distribution",
+    "box",
+    "correlation",
+    "flow",
+    "table",
+)
 SIZES = {"preview": (7.2, 4.7), "single": (3.5, 2.65), "double": (7.2, 4.6), "slide": (10, 5.625)}
 FONT = next(
     (

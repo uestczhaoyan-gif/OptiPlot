@@ -21,11 +21,13 @@
 
 ## 题录与 DOI 的定位
 
-`catalog/papers.json` 与 `catalog/cases.json` 中的出处字段**只用于项目级说明**——证明本项目的图型集合来自对顶刊图表的实际阅读，并可举若干例子。
+`catalog/papers.json` 保存题录与 DOI，**只用于项目级说明**——证明本项目的图型集合来自对顶刊图表的实际阅读，并可举若干例子（见 `docs/literature.md`）。
 
-它们**不是**产品运行时依赖：`recommend()` 历史上从未读取过案例库（`catalog_path` 参数声明后未被引用），界面也不得在每张候选图下展示证据。
+`catalog/styles.json` 是图型子类库，**不含任何出处字段**：只有 `id` / `label` / `patterns` / `data_schema` / `recipe`。
 
-因此对合作者的要求是：新增图型时，案例记录可以作为**你调研的凭据**保留，但不要把它接进渲染路径或界面。
+它们都**不是**产品运行时依赖：`recommend()` 历史上从未读取过案例库（`catalog_path` 参数声明后未被引用，现已删除），界面也不得在每张候选图下展示证据或来源。
+
+因此对合作者的要求是：新增图型时，题录可以作为**你调研的凭据**保留，但不要把它接进渲染路径或界面。
 
 ---
 
@@ -83,13 +85,15 @@
 
 ## 里程碑
 
-### N1 · 数据层纯化
-- `cases.json` → `catalog/styles.json`，只保留 `label` / `patterns` / `data_schema` / `recipe`
-- 移除 `evidence` / `visual_review` / `checked_date` / `implementation_scope` / `figure` 等逐条出处字段
+### N1 · 数据层纯化 ✅ 已完成（2026-09-20）
+- `cases.json` → `catalog/styles.json`，只保留 `label` / `patterns` / `data_schema` / `recipe`（108 → 108 条，无重复无缺失，67.8 KB → 30.0 KB）
+- 移除 `evidence` / `visual_review` / `checked_date` / `implementation_scope` / `figure` / `source_url` / `paper_id` 七类逐条出处字段
 - `papers.json` 保留，定位改为项目级凭据
-- 同步改写 `test_catalog_links_and_counts()`（现在断言的是 https 外键，改为断言 patterns/data_schema/recipe 完整性）
-- README 撤掉逐图证据表述
-- **判据**：测试全绿；渲染路径与界面中不存在证据字段
+- `test_catalog_links_and_counts` 已替换为三个测试：图型引用有效性、出处字段不回潮、题录自身完整性
+- 移除 `app.py` 的"论文图表案例"Tab（案例库唯一的运行时读者）与 `recommend()` 的死参数 `catalog_path`
+- 新增 `render.FIGURE_TYPES` 作为图型 ID 权威列表
+- README 与 `docs/{architecture,literature,validation}.md` 同步
+- **判据达成**：47 项测试全绿；渲染路径与界面中不存在证据字段
 
 ### N2 · 界面契约冻结
 只保留四块：**图 / 参数 / 解释 / 等级**。数据检查与样式预设降级为抽屉。

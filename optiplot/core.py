@@ -374,7 +374,7 @@ def _valid_count(data, columns) -> int:
     return len(data[list(dict.fromkeys(columns))].dropna())
 
 
-def recommend(profile: DataProfile, catalog_path=None) -> list[Recommendation]:
+def recommend(profile: DataProfile) -> list[Recommendation]:
     """Return at most eight renderable choices. No regression is automatic."""
     p, out = profile, []
     data = p.data

@@ -18,14 +18,13 @@ for key, meta in idx.items():
     rec = next((r for r in recommend(profile) if r.id == kind), None)
     meta["encodings"] = dict(rec.encodings) if rec else {}
 
-cases_raw = json.loads((root / "catalog" / "cases.json").read_text(encoding="utf-8-sig"))
+styles_raw = json.loads((root / "catalog" / "styles.json").read_text(encoding="utf-8"))
 sub = {}
 for meta in idx.values():
     fid = meta["id"]
-    hits = [c for c in cases_raw if fid in ["flow" if p == "flowchart" else p for p in c.get("patterns", [])]]
+    hits = [s for s in styles_raw if fid in s["patterns"]]
     sub[fid] = [
-        {k: c.get(k, "") for k in ("label", "figure", "data_schema", "evidence", "source_url")}
-        for c in hits[:2]
+        {k: s.get(k, "") for k in ("id", "label", "data_schema", "recipe")} for s in hits[:3]
     ]
 
 payload = json.dumps({"figs": idx, "cases": sub}, ensure_ascii=False, separators=(",", ":"))
