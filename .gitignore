@@ -1,0 +1,14 @@
+.venv/
+.cache/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+optiplot_output/
+private_data/
+catalog/incoming/
+.env
+design/assets/
+design/mockup.html

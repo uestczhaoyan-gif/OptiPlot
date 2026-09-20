@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OptiPlot 界面稿 · 极简方向</title>
+<style>
+/* ── 配色主题：只影响界面外壳，数据颜色恒定为 Okabe-Ito ───────────── */
+:root[data-theme="ink"]{
+  --bg:#F1F5F9; --panel:#FFFFFF; --card:#FFFFFF; --ink:#17324D; --muted:#5D7487;
+  --line:#DEE6ED; --accent:#0072B2; --accent-ink:#FFFFFF; --hover:#F7FAFC; --lw:1px;
+  --field:#FFFFFF; --field-ink:#17324D;
+}
+:root[data-theme="paper"]{
+  --bg:#FBFBFA; --panel:#FBFBFA; --card:#FFFFFF; --ink:#1A1A18; --muted:#75736E;
+  --line:#E8E7E3; --accent:#0072B2; --accent-ink:#FFFFFF; --hover:#F3F3F0; --lw:1px;
+  --field:#FFFFFF; --field-ink:#1A1A18;
+}
+:root[data-theme="stone"]{
+  --bg:#F5F4F1; --panel:#EDECE8; --card:#FFFFFF; --ink:#292524; --muted:#78716C;
+  --line:#DEDAD3; --accent:#A16207; --accent-ink:#FFFFFF; --hover:#F0EFEA; --lw:1px;
+  --field:#FFFFFF; --field-ink:#292524;
+}
+:root[data-theme="lab"]{
+  --bg:#101418; --panel:#171C22; --card:#FFFFFF; --ink:#E6EDF3; --muted:#8B98A5;
+  --line:#2B333B; --accent:#56B4E9; --accent-ink:#0B1116; --hover:#1D242B; --lw:1px;
+  --field:#1D242B; --field-ink:#E6EDF3;
+}
+:root[data-theme="contrast"]{
+  --bg:#FFFFFF; --panel:#FFFFFF; --card:#FFFFFF; --ink:#000000; --muted:#2E2E2E;
+  --line:#000000; --accent:#004E8B; --accent-ink:#FFFFFF; --hover:#F0F0F0; --lw:2px;
+  --field:#FFFFFF; --field-ink:#000000;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font:15px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  display:grid; grid-template-rows:44px 1fr; -webkit-font-smoothing:antialiased;
+}
+button,input,select{font:inherit;color:inherit}
+
+/* ── 顶栏：纯色、无渐变、无阴影 ─────────────────────────────────── */
+header{
+  background:var(--panel); border-bottom:var(--lw) solid var(--line);
+  display:flex; align-items:center; gap:14px; padding:0 18px;
+}
+header .mark{font-size:16px; font-weight:650; letter-spacing:-.01em}
+header .sub{font-size:12px; color:var(--muted); letter-spacing:.04em}
+header .right{margin-left:auto; font-size:12px; color:var(--muted);
+  font-variant-numeric:tabular-nums}
+
+/* ── 主体：左栏 260px + 右主区 ──────────────────────────────────── */
+main{display:grid; grid-template-columns:260px 1fr; overflow:hidden}
+aside{
+  background:var(--panel); border-right:var(--lw) solid var(--line);
+  padding:18px 16px; overflow-y:auto;
+}
+h2{
+  font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:10px;
+}
+section+section{margin-top:26px; padding-top:22px; border-top:var(--lw) solid var(--line)}
+.dataline{font-size:13px; font-variant-numeric:tabular-nums; color:var(--muted)}
+.dataline b{color:var(--ink); font-weight:600; display:block; margin-bottom:3px;
+  font-size:14px; overflow-wrap:anywhere}
+
+/* 候选列表：竖排单列，分数用等宽数字对齐 */
+.cands{list-style:none; display:flex; flex-direction:column; gap:1px}
+.cands button{
+  width:100%; text-align:left; background:none; border:0; cursor:pointer;
+  padding:8px 10px; display:grid; grid-template-columns:26px 1fr; gap:9px;
+  align-items:baseline; border-left:2px solid transparent; border-radius:0 3px 3px 0;
+}
+.cands button:hover{background:var(--hover)}
+.cands button[aria-current="true"]{
+  background:var(--hover); border-left-color:var(--accent);
+}
+.cands .score{
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; text-align:right;
+}
+.cands button[aria-current="true"] .score{color:var(--accent); font-weight:600}
+
+/* ── 右主区 ─────────────────────────────────────────────────────── */
+.stage{overflow-y:auto; padding:20px 26px 90px}
+.figure{
+  background:var(--card); border:var(--lw) solid var(--line);
+  padding:14px; display:flex; justify-content:center;
+}
+.figure img{max-width:100%; max-height:52vh; display:block}
+.caption{margin-top:11px; font-size:13px; color:var(--muted); max-width:74ch}
+.caption b{color:var(--ink); font-weight:600; font-size:14px}
+
+/* 抽屉：次要内容默认收起，这是"极简"的主要手段 */
+details{margin-top:14px; border-top:var(--lw) solid var(--line); padding-top:12px}
+details summary{
+  cursor:pointer; font-size:12px; color:var(--muted); list-style:none;
+  letter-spacing:.02em; user-select:none;
+}
+details summary::before{content:"▸ "; color:var(--accent)}
+details[open] summary::before{content:"▾ "}
+details[open] summary{margin-bottom:11px}
+.body{font-size:13px; color:var(--muted); line-height:1.7}
+.body code{
+  font-family:ui-monospace,"Cascadia Mono",Consolas,monospace; font-size:12px;
+  background:var(--bg); padding:1px 5px; border-radius:3px; color:var(--ink);
+}
+.case{padding:11px 0; border-top:var(--lw) solid var(--line)}
+.case:first-child{border-top:0; padding-top:0}
+.case .t{color:var(--ink); font-weight:600; font-size:13px}
+.note{font-size:12px; color:var(--muted); margin-top:8px; font-style:normal}
+
+/* 控件条：一行解决，标签弱化 */
+.controls{
+  margin-top:22px; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:flex-end;
+  padding-bottom:16px; border-bottom:var(--lw) solid var(--line);
+}
+.f{display:flex; flex-direction:column; gap:4px}
+.f label{font-size:11px; color:var(--muted); letter-spacing:.03em}
+.f select,.f input{
+  background:var(--field); border:var(--lw) solid var(--line); color:var(--field-ink);
+  padding:5px 8px; border-radius:3px; min-width:96px; font-size:13px;
+}
+.f.check{flex-direction:row; align-items:center; gap:6px; padding-bottom:6px}
+.actions{margin-left:auto; display:flex; gap:8px; align-items:flex-end}
+.btn{
+  background:var(--field); border:var(--lw) solid var(--line); padding:7px 14px;
+  border-radius:3px; cursor:pointer; font-size:13px;
+}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.btn.primary:hover{opacity:.9}
+
+/* 配色选择器 */
+.picker{
+  position:fixed; right:20px; bottom:18px; display:flex; gap:6px; align-items:center;
+  background:var(--panel); border:var(--lw) solid var(--line); padding:7px 10px;
+  border-radius:999px; font-size:11px; color:var(--muted);
+}
+.sw{width:20px; height:20px; border-radius:50%; cursor:pointer; border:2px solid var(--line)}
+.sw[aria-pressed="true"]{border-color:var(--ink); transform:scale(1.12)}
+.warn{color:#B03060}
+:root[data-theme="lab"] .warn{color:#F0A0B0}
+</style>
+</head>
+<body>
+<header>
+  <span class="mark">OptiPlot</span>
+  <span class="sub">光学科研绘图工作台</span>
+  <span class="right" id="status">本地处理 · 未做平滑、归一化或自动拟合</span>
+</header>
+
+<main>
+  <aside>
+    <section>
+      <h2>数据</h2>
+      <div class="dataline"><b id="dsname"></b><span id="dssum"></span></div>
+      <select id="ds" style="margin-top:10px;width:100%;background:var(--field);
+        border:var(--lw) solid var(--line);color:var(--field-ink);padding:5px 8px;border-radius:3px;font-size:13px">
+      </select>
+      <details id="checkwrap"><summary>数据检查</summary><div class="body" id="check"></div></details>
+    </section>
+    <section>
+      <h2>候选图形</h2>
+      <ul class="cands" id="cands"></ul>
+      <p class="note">分数是结构适配排序，不是统计置信度。</p>
+    </section>
+  </aside>
+
+  <div class="stage">
+    <div class="figure"><img id="fig" alt="图形预览"></div>
+    <p class="caption" id="caption"></p>
+
+    <details><summary>为什么这么画 · 案例库</summary>
+      <div class="body" id="cases"></div>
+    </details>
+
+    <div class="controls">
+      <div class="f"><label>X / θ</label><select id="cx"></select></div>
+      <div class="f"><label>Y / R</label><select id="cy"></select></div>
+      <div class="f"><label>Z / 误差 / 分组</label><select id="cz"></select></div>
+      <div class="f"><label>尺寸</label>
+        <select id="cs"><option>single · 88.9mm</option><option selected>double · 182.9mm</option>
+        <option>slide · 16:9</option></select></div>
+      <div class="f"><label>拟合</label><select id="cf"><option>none</option><option>linear</option></select></div>
+      <div class="f check"><input type="checkbox" id="clog"><label for="clog">对数轴</label></div>
+      <div class="actions">
+        <button class="btn">PNG / SVG / PDF</button>
+        <button class="btn primary">导出可复现 ZIP</button>
+      </div>
+    </div>
+
+    <details><summary>标题与坐标轴标签</summary>
+      <div class="controls" style="border:0;padding-top:6px">
+        <div class="f"><label>标题</label><input placeholder="留空则不绘制"></div>
+        <div class="f"><label>X 标签</label><input placeholder="列名不会自动赋予单位"></div>
+        <div class="f"><label>Y 标签</label><input placeholder="导出前请填真实物理量与单位"></div>
+      </div>
+    </details>
+
+    <details><summary>本设计的三条约束</summary>
+      <div class="body">
+        <p>① <b>数据颜色不随界面主题变化。</b>曲线始终使用 Okabe-Ito 色盲安全调色板
+        （<code>#0072B2 #D55E00 #009E73 #CC79A7 #E69F00 #56B4E9</code>），换肤只改外壳，
+        否则导出图会随界面设置改变，破坏可复现性。</p>
+        <p>② <b>深色主题下图形卡片仍保持白底。</b>Matplotlib 输出为白底，若跟随深色会显得
+        像未加载完成；投稿用图本来也要求白底。</p>
+        <p>③ <b>次要内容一律进抽屉。</b>数据检查、案例库、标题标签默认收起，
+        主区只保留"图 + 变量映射 + 导出"这一条主轴。</p>
+      </div>
+    </details>
+  </div>
+</main>
+
+<div class="picker">配色
+  <button class="sw" data-t="ink"      style="background:#17324D" title="Ink · 沿用现有色"></button>
+  <button class="sw" data-t="paper"    style="background:#FBFBFA" title="Paper · 最克制"></button>
+  <button class="sw" data-t="stone"    style="background:#A16207" title="Stone · 暖灰"></button>
+  <button class="sw" data-t="lab"      style="background:#101418" title="Lab · 深色"></button>
+  <button class="sw" data-t="contrast" style="background:linear-gradient(90deg,#000 50%,#004E8B 50%)" title="High contrast · WCAG AAA"></button>
+</div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById('data').textContent);
+// 按数据集聚合候选
+const groups = {};
+for (const [key, f] of Object.entries(D.figs)) {
+  const ds = key.split('__')[0];
+  (groups[ds] ||= []).push({key, ...f});
+}
+const NAMES = {
+  sample_spectrum:'光谱扫描 151×4', sample_beam_map:'二维光束扫描', sample_replicates:'重复测量',
+  sample_polarization:'偏振角度响应', sample_devices:'器件分组比较', sample_dense_scatter:'高密度散点',
+  sample_workflow:'工作流程边列表', sample_explicit_error:'显式 SEM 误差列'
+};
+const el = id => document.getElementById(id);
+let cur = null;
+
+function fillSelect(sel, cols, val){
+  sel.innerHTML = '';
+  for (const c of [''].concat(cols)) {
+    const o = document.createElement('option');
+    o.value = o.textContent = c; sel.appendChild(o);
+  }
+  if (val != null) sel.value = val;
+}
+
+function show(ds, rec){
+  cur = rec;
+  el('fig').src = rec.file;
+  el('dsname').textContent = ds + '.csv';
+  el('dssum').textContent = NAMES[ds] || '';
+  el('caption').innerHTML = `<b>${rec.title}</b> · ${rec.score} 分<br>${rec.reason}`;
+  document.querySelectorAll('.cands button').forEach(b =>
+    b.setAttribute('aria-current', b.dataset.key === rec.key ? 'true' : 'false'));
+
+  // 案例库
+  const cs = D.cases[rec.id] || [];
+  el('cases').innerHTML = cs.length ? cs.map(c =>
+    `<div class="case"><div class="t">${c.label||''} · ${c.figure||''}</div>
+     需要数据列：<code>${c.data_schema||'—'}</code><br>
+     证据级别：${c.evidence||'—'} · 来源 ${c.source_url||''}</div>`).join('')
+    : '<span class="warn">当前数据没有适配此图型的案例。</span>';
+
+  // 变量映射（演示：从编码契约回填）
+  const e = rec.encodings || {};
+  const cols = Object.values(e).flat().filter(v => typeof v === 'string');
+  fillSelect(el('cx'), cols, e.x ?? e.theta ?? e.source ?? cols[0]);
+  fillSelect(el('cy'), cols, Array.isArray(e.y) ? e.y[0] : (e.y ?? e.r ?? e.value ?? e.target));
+  fillSelect(el('cz'), cols, e.z ?? e.error ?? e.group);
+}
+
+function renderDs(ds){
+  el('cands').innerHTML = '';
+  const list = groups[ds].slice().sort((a,b) => b.score - a.score);
+  for (const r of list) {
+    const li = document.createElement('li');
+    li.innerHTML = `<button data-key="${r.key}"><span class="score">${r.score}</span>
+      <span>${r.title}</span></button>`;
+    li.querySelector('button').onclick = () => show(ds, r);
+    el('cands').appendChild(li);
+  }
+  show(ds, list[0]);
+}
+
+el('ds').innerHTML = Object.keys(groups).map(d =>
+  `<option value="${d}">${NAMES[d]||d}</option>`).join('');
+el('ds').onchange = ev => renderDs(ev.target.value);
+
+document.querySelectorAll('.sw').forEach(b => b.onclick = () => {
+  document.documentElement.dataset.theme = b.dataset.t;
+  document.querySelectorAll('.sw').forEach(x =>
+    x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+});
+document.querySelector('.sw[data-t="ink"]').setAttribute('aria-pressed','true');
+document.documentElement.dataset.theme = 'ink';
+
+// 数据检查（演示：把推荐理由里的告警拆成条目）
+el('check').innerHTML = `<p class="warn">发现 2 个待确认项</p>
+  <p>· <code>angle_deg</code> 未注明单位约定，暂按度显示，请在设置中确认。</p>
+  <p>· 共有 3 个缺失单元格；各图仅使用相关列的有效观测，不自动插值。</p>`;
+renderDs('sample_spectrum');
+</script>
+</body>
+</html>

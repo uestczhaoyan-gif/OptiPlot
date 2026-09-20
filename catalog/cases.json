@@ -1,0 +1,1686 @@
+[
+  {
+    "id": "wei2019loss-01",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 1b,d",
+    "label": "基线与分析物耦合光谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "normalized_frequency, T_without, T_with, R_without, R_with",
+    "recipe": "同色实虚线表示有无分析物；用 fill_between 标注信号差异，保留同一归一化基准。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14",
+    "visual_review": {
+      "status": "reviewed",
+      "pdf_page": 2,
+      "date": "2026-09-14",
+      "method": "local PDF page rendered with Windows PDF engine and inspected"
+    }
+  },
+  {
+    "id": "wei2019loss-02",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 1e",
+    "label": "损耗比与有符号分子增强信号",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "radiative_to_absorptive_loss_ratio, delta_T, delta_R",
+    "recipe": "原图是对数横轴上的两条响应曲线，不是二维热图。用 semilogx 或勾选 X log，保留 ΔT/ΔR 正负号，并在用户确认后标示工作区间。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14",
+    "visual_review": {
+      "status": "reviewed",
+      "pdf_page": 2,
+      "date": "2026-09-14",
+      "method": "local PDF page rendered with Windows PDF engine and inspected"
+    }
+  },
+  {
+    "id": "wei2019loss-03",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 2c",
+    "label": "几何参数对应阻尼率",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "device, radiative_damping, absorptive_damping",
+    "recipe": "以器件序号标记两种损耗，复用跨面板颜色；离散器件之间不强行拟合。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2019loss-04",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 2e,f",
+    "label": "多样品纵向错位光谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength, sample, transmission, reflection",
+    "recipe": "按样品分组增加已知纵向偏置；直接标注偏移量，避免将偏置当成真实响应。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2019loss-05",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 3c",
+    "label": "失谐与损耗比二维扫描",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "detuning, loss_ratio, signal",
+    "recipe": "使用规则网格热图与相同颜色范围；实验路径叠加虚线并标注坐标。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2019loss-06",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 3d,e",
+    "label": "实验与理论失谐响应",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "detuning, observed, predicted",
+    "recipe": "实验用点、独立理论预测用线；拟合时报告模型和残差，不将理论线假定为测量。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2019loss-07",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 4d",
+    "label": "浓度系列吸收谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength, concentration, corrected_signal",
+    "recipe": "先记录背景校正步骤，再叠加浓度系列，颜色顺序与浓度单调对应。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2019loss-08",
+    "paper_id": "wei2019loss",
+    "figure": "Fig. 4e",
+    "label": "气体浓度标定",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "concentration, measured_signal",
+    "recipe": "标定点叠加用户选定模型；低浓度区可单独拟合并标注适用区间。",
+    "source_url": "https://doi.org/10.1021/acsami.9b18002",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020mini-01",
+    "paper_id": "wei2020mini",
+    "figure": "Fig. 1a",
+    "label": "技术发展阶段",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "将技术阶段抽象成有向节点，箭头表达演进；装置三维图需要独立几何绘制。",
+    "source_url": "https://doi.org/10.1063/5.0033056",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020mini-02",
+    "paper_id": "wei2020mini",
+    "figure": "Fig. 4a",
+    "label": "滤光技术分代比较",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "用一致节点尺寸呈现技术分代；把光路原理放入节点短标签，不自动生成物理结构。",
+    "source_url": "https://doi.org/10.1063/5.0033056",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020mini-03",
+    "paper_id": "wei2020mini",
+    "figure": "Fig. 6a",
+    "label": "系统组件整合",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "光源、样品、滤波、探测按信号方向布置；以边标签注明光信号或电信号。",
+    "source_url": "https://doi.org/10.1063/5.0033056",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-01",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 2b,d",
+    "label": "多器件光电响应与误差棒",
+    "patterns": [
+      "errorbar"
+    ],
+    "data_schema": "device, replicate, photovoltage",
+    "recipe": "从真实重复测量求均值与指定 SD/SEM；图注列明 n 和误差定义，不能从点大小反推误差。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-02",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 3a",
+    "label": "调制光时域响应",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "time, photovoltage, illumination_state",
+    "recipe": "按时间排序画响应，可在已知开光区间加背景色；保留原始采样率。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-03",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 3b",
+    "label": "暗态与光照 I-V 曲线",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "voltage, dark_current, illuminated_current",
+    "recipe": "共用电压轴，明确暗电流和光照条件；零点辅助线便于读取开路电压和短路电流。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-04",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 3d",
+    "label": "频率响应与估计范围",
+    "patterns": [
+      "spectrum_lines",
+      "errorbar"
+    ],
+    "data_schema": "frequency, measured, model, lower, upper",
+    "recipe": "频率跨度大时选对数横轴；fill_between 显示已提供的估计边界并写明含义。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-05",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 3e",
+    "label": "入射功率与光电流",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "power, gate_voltage, photocurrent",
+    "recipe": "门电压按组编码；拟合保持各组独立，正值且跨数量级时才使用对数坐标。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-06",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 3f",
+    "label": "噪声谱及 NEP",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "frequency, noise, nep",
+    "recipe": "将噪声和 NEP 分成共用横轴的面板，注明两者单位和带宽归一化。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-07",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 4d",
+    "label": "三端口角度响应",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "angle_deg, port1, port2, port3",
+    "recipe": "使用统一端口颜色，角度轴以度标注；双极响应使用笛卡尔轴保留符号。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-08",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 4e",
+    "label": "双通道参数轨迹",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "port1, port2, angle_deg",
+    "recipe": "以两个端口为 x/y 坐标，角度编码为循环色；这里的散点无需线性拟合。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2021polarity-01",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 1a",
+    "label": "材料性能文献散点",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "material, inverse_polarization_ratio, inverse_diattenuation",
+    "recipe": "原图主坐标为 1/PR 和 1/diattenuation；材料以形状编码。变换必须由用户按物理定义完成，零分母保留为无效值；不自动截断奇点或连接独立材料点。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14",
+    "visual_review": {
+      "status": "reviewed",
+      "pdf_page": 2,
+      "date": "2026-09-14",
+      "method": "local PDF page rendered with Windows PDF engine and inspected"
+    }
+  },
+  {
+    "id": "wei2021polarity-02",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 1c",
+    "label": "双几何角参数响应图",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "theta1_deg, theta2_deg, polarization_ratio",
+    "recipe": "画角度参数网格；屏蔽分母接近零的无效值，注明饱和颜色阈值。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14",
+    "visual_review": {
+      "status": "reviewed",
+      "pdf_page": 2,
+      "date": "2026-09-14",
+      "method": "local PDF page rendered with Windows PDF engine and inspected"
+    }
+  },
+  {
+    "id": "wei2021polarity-03",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 2g",
+    "label": "矢量光电流分量",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "angle_deg, current_x, current_y",
+    "recipe": "同轴展示两个有符号分量，增加零线；保持角度采样次序。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2021polarity-04",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 2i",
+    "label": "多取向实验理论对照",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "angle_deg, device_orientation, measured, simulated",
+    "recipe": "实验点与模拟线共色，器件取向跨面板复用；不要对全部组混合拟合。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2021polarity-05",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 3b,c",
+    "label": "响应极大极小值图",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "theta1_deg, theta2_deg, response_max, response_min",
+    "recipe": "将极值画成并排网格图，共享色标和坐标；标出切线位置。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2021polarity-06",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 4c",
+    "label": "栅压调制角度曲线",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "angle_deg, gate_voltage, photovoltage",
+    "recipe": "不同栅压使用顺序色，实验点叠加选定周期模型；有符号数据保持直角坐标。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2021polarity-07",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 5b",
+    "label": "微小角度扰动标定",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "small_angle_deg, photovoltage",
+    "recipe": "仅在用户指定的近线性区域拟合；斜率单位为电压每度，单独检查残差。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2021polarity-08",
+    "paper_id": "wei2021polarity",
+    "figure": "Fig. 5c",
+    "label": "灵敏度功率相关性",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "incident_power, angular_sensitivity",
+    "recipe": "散点展示独立功率扫描，再用物理选定模型拟合并报告有效动态范围。",
+    "source_url": "https://www.nature.com/articles/s41566-021-00819-6",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2023spin-01",
+    "paper_id": "wei2023spin",
+    "figure": "Fig. 1d",
+    "label": "波片角与 Stokes 参数",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "qwp_angle_deg, S0, S1, S2, S3",
+    "recipe": "四条连续曲线共享角度横轴，保留正负号；标出参数定义和角度零点。",
+    "source_url": "https://www.nature.com/articles/s41566-022-01115-7",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2023spin-02",
+    "paper_id": "wei2023spin",
+    "figure": "Fig. 2b",
+    "label": "结构尺寸与手性响应",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "horizontal_length, vertical_length, current_x",
+    "recipe": "用以零为中心的发散色图；最优点和零响应点采用不同标记。",
+    "source_url": "https://www.nature.com/articles/s41566-022-01115-7",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2023spin-03",
+    "paper_id": "wei2023spin",
+    "figure": "Fig. 2c,f",
+    "label": "偏振条件吸收光谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength, polarization_state, absorption",
+    "recipe": "LCP、RCP 与线偏振分别编码；跨结构比较时共享纵轴和色序。",
+    "source_url": "https://www.nature.com/articles/s41566-022-01115-7",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2023spin-04",
+    "paper_id": "wei2023spin",
+    "figure": "Fig. 3f",
+    "label": "旋转取向与响应度分量",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "orientation_deg, R0, R1, R2, R3",
+    "recipe": "响应度分量同轴显示并绘制零线；适合验证旋转对称性。",
+    "source_url": "https://www.nature.com/articles/s41566-022-01115-7",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2023spin-05",
+    "paper_id": "wei2023spin",
+    "figure": "Fig. 4d",
+    "label": "小椭圆率响应及 SEM",
+    "patterns": [
+      "errorbar",
+      "scatter_fit"
+    ],
+    "data_schema": "ellipticity_deg, replicate, photovoltage",
+    "recipe": "原图图注注明 12 次测量的 SEM；迁移时 n 取用户数据实际值，绝不固定为 12。",
+    "source_url": "https://www.nature.com/articles/s41566-022-01115-7",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2023spin-06",
+    "paper_id": "wei2023spin",
+    "figure": "Fig. 4e",
+    "label": "相反手性开关响应",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "time, lcp_voltage, rcp_voltage",
+    "recipe": "共用时间轴区分手性；开光背景区间由输入元数据提供。",
+    "source_url": "https://www.nature.com/articles/s41566-022-01115-7",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2023spin-07",
+    "paper_id": "wei2023spin",
+    "figure": "Fig. 4f",
+    "label": "偏振状态 I-V 对比",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "voltage, polarization_state, current",
+    "recipe": "不同偏振状态独立分组，零线作为读数参考；坐标单位保持一致。",
+    "source_url": "https://www.nature.com/articles/s41566-022-01115-7",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "liu2025stokes-01",
+    "paper_id": "liu2025stokes",
+    "figure": "Fig. 2b-e",
+    "label": "近场分布",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "x, y, field_intensity, subdevice",
+    "recipe": "多器件近场图共享坐标尺度；同类场量统一色标，几何边界来自额外结构数据。",
+    "source_url": "https://www.nature.com/articles/s41928-025-01481-4",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "liu2025stokes-02",
+    "paper_id": "liu2025stokes",
+    "figure": "Fig. 2b-e cutlines",
+    "label": "电流密度截线",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "position_y, stokes_input, current_x",
+    "recipe": "从用户给定截线数据画有符号响应；明确截线方向与偏振输入。",
+    "source_url": "https://www.nature.com/articles/s41928-025-01481-4",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "liu2025stokes-03",
+    "paper_id": "liu2025stokes",
+    "figure": "Fig. 3",
+    "label": "响应矩阵元素参数扫描",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "length1, length2, matrix_row, matrix_col, responsivity",
+    "recipe": "按矩阵元素分面，发散色标以零为中心；严格零值与缺失值使用不同显示。",
+    "source_url": "https://www.nature.com/articles/s41928-025-01481-4",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "liu2025stokes-04",
+    "paper_id": "liu2025stokes",
+    "figure": "Fig. 4a",
+    "label": "扫描成像信号链",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "将光源、相位板、扫描、四通道读出抽象成流程；连接上写出光学或电学量。",
+    "source_url": "https://www.nature.com/articles/s41928-025-01481-4",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "liu2025stokes-05",
+    "paper_id": "liu2025stokes",
+    "figure": "Fig. 4c",
+    "label": "四通道空间图",
+    "patterns": [
+      "heatmap"
+    ],
+    "data_schema": "scan_x, scan_y, channel, photovoltage",
+    "recipe": "按通道分面共享空间坐标；统一背景与单位，归一化选择需明确记录。",
+    "source_url": "https://www.nature.com/articles/s41928-025-01481-4",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "liu2025stokes-06",
+    "paper_id": "liu2025stokes",
+    "figure": "Fig. 4e",
+    "label": "位置与通道响应表",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "position_label, channel0, channel1, channel2, channel3",
+    "recipe": "将多位置多通道测量整理为数值表作为原面板的可读替代；注明是迁移形式而非原图类型。",
+    "source_url": "https://www.nature.com/articles/s41928-025-01481-4",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-01",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 1c",
+    "label": "能量转移概念链",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "用双向或有向边表示用户提供的耦合关系；不把示意边长度解释为真实耦合强度。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-02",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 3b",
+    "label": "宽度波长 FoM 图",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "width_nm, wavelength_nm, fom",
+    "recipe": "热图搜索设计窗口，叠加最优点；先去除不规则网格缺口再决定是否插值。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-03",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 3c,d",
+    "label": "TE/TM 吸收光谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength_nm, wire, polarization, absorption",
+    "recipe": "按 TE/TM 分面，左右纳米线共用颜色；工作波段用有边界的阴影。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-04",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 4b",
+    "label": "光暗 I-V 曲线",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "voltage, condition, current",
+    "recipe": "暗态与 TE/TM 响应共享电压轴，避免对数轴隐藏负电流。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-05",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 4c",
+    "label": "掺杂浓度响应扫描",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "carrier_concentration, doping_type, photocurrent",
+    "recipe": "n/p 类型分组，正浓度用对数横轴；拟合可选并需说明物理模型。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-06",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 4d",
+    "label": "光电流及响应度功率扫描",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "power_density, photocurrent, responsivity",
+    "recipe": "默认用两行共用功率横轴显示不同量纲；保留原始单位与偏压条件。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-07",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 4e",
+    "label": "纳秒开关响应",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "time_ns, response",
+    "recipe": "标出上升下降区间；10%-90% 时间必须从实际样点计算，禁止从平滑曲线伪造。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-08",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 5a",
+    "label": "含噪声编码解码流程",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "输入物理量、器件通道、噪声与反演按阶段排列，噪声作为独立支路。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025vector-09",
+    "paper_id": "wei2025vector",
+    "figure": "Fig. 5b-d",
+    "label": "真值估计及误差带",
+    "patterns": [
+      "scatter_fit",
+      "errorbar"
+    ],
+    "data_schema": "actual, estimated, standard_deviation",
+    "recipe": "画 y=x 参考线，误差带来源于已提供的不确定度；各物理量分面显示。",
+    "source_url": "https://doi.org/10.1364/OE.550582",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025ri-01",
+    "paper_id": "wei2025ri",
+    "figure": "Fig. 2c",
+    "label": "折射率变化引起光谱漂移",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength_nm, refractive_index, absorption",
+    "recipe": "折射率用顺序色，标注固定读出波长；不要将峰移量与强度差混淆。",
+    "source_url": "https://doi.org/10.1364/OL.569302",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025ri-02",
+    "paper_id": "wei2025ri",
+    "figure": "Fig. 3a",
+    "label": "周期波长反射图",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "period_nm, wavelength_nm, reflection",
+    "recipe": "规则网格热图描绘共振，标注已知 BIC-like 点；原图场分布插图需独立数据。",
+    "source_url": "https://doi.org/10.1364/OL.569302",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025ri-03",
+    "paper_id": "wei2025ri",
+    "figure": "Fig. 4a",
+    "label": "宽度折射率吸收图",
+    "patterns": [
+      "heatmap"
+    ],
+    "data_schema": "width_nm, refractive_index, absorption",
+    "recipe": "在原始采样网格上显示吸收；宽度单位和 RI 无量纲标签分开。",
+    "source_url": "https://doi.org/10.1364/OL.569302",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025ri-04",
+    "paper_id": "wei2025ri",
+    "figure": "Fig. 4b",
+    "label": "折射率灵敏度导数图",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "width_nm, refractive_index, derivative",
+    "recipe": "先注明导数计算或输入来源；以零为中心色标展示灵敏度正负。",
+    "source_url": "https://doi.org/10.1364/OL.569302",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025ri-05",
+    "paper_id": "wei2025ri",
+    "figure": "Fig. 4c",
+    "label": "尺寸组合响应矩阵行列式",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "width1_nm, width2_nm, determinant",
+    "recipe": "对二维组合画 FoM 图并圈出候选区域；最优点取真实数据而非视觉中心。",
+    "source_url": "https://doi.org/10.1364/OL.569302",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025ri-06",
+    "paper_id": "wei2025ri",
+    "figure": "Fig. 5c",
+    "label": "分辨率随功率变化",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "incident_power, minimum_delta_n",
+    "recipe": "仅对正值用双对数轴；标出噪声与判定门限来源。",
+    "source_url": "https://doi.org/10.1364/OL.569302",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2025ri-07",
+    "paper_id": "wei2025ri",
+    "figure": "Fig. 5d",
+    "label": "比率读出功率鲁棒性",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "power, refractive_index, photocurrent_ratio",
+    "recipe": "按折射率分组，对相同功率位置共用横轴；分母近零时显示缺失而非无穷。",
+    "source_url": "https://doi.org/10.1364/OL.569302",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zou2026grating-01",
+    "paper_id": "zou2026grating",
+    "figure": "Fig. 2c,d",
+    "label": "TE/TM 场幅值空间分布",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "y_nm, z_nm, polarization, field_amplitude",
+    "recipe": "统一空间比例与色标；幅值与相位不得共用同一量纲色标。",
+    "source_url": "https://doi.org/10.1088/2040-8986/ae4bf0",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zou2026grating-02",
+    "paper_id": "zou2026grating",
+    "figure": "Fig. 2e",
+    "label": "偏振分束衍射效率光谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength_nm, polarization, diffraction_order, efficiency",
+    "recipe": "偏振用颜色、级次用线型；效率轴设定物理适用范围。",
+    "source_url": "https://doi.org/10.1088/2040-8986/ae4bf0",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zou2026grating-03",
+    "paper_id": "zou2026grating",
+    "figure": "Fig. 2f",
+    "label": "周期波长衍射区域",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "period_nm, wavelength_nm, diffraction_efficiency",
+    "recipe": "效率热图叠加理论区域边界；边界参数从用户元数据获得。",
+    "source_url": "https://doi.org/10.1088/2040-8986/ae4bf0",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zou2026grating-04",
+    "paper_id": "zou2026grating",
+    "figure": "Fig. 3e,f",
+    "label": "破对称结构偏振谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength_nm, polarization, order, efficiency",
+    "recipe": "TE/TM 分面并保持同一波长范围，用标线比较目标波长。",
+    "source_url": "https://doi.org/10.1088/2040-8986/ae4bf0",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zou2026grating-05",
+    "paper_id": "zou2026grating",
+    "figure": "Fig. 4b,d",
+    "label": "二维光栅设计比较",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength_nm, geometry, diffraction_order, efficiency",
+    "recipe": "不同几何按面板排列，衍射级次统一线型以便横向比较。",
+    "source_url": "https://doi.org/10.1088/2040-8986/ae4bf0",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2026nonlocal-01",
+    "paper_id": "wei2026nonlocal",
+    "figure": "Fig. 1d",
+    "label": "角分辨能带图",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "wavevector_or_angle, wavelength_or_frequency, measured_response",
+    "recipe": "标明动量或角度单位，颜色表示实测响应；Gamma 点作为明确坐标标记。",
+    "source_url": "https://www.nature.com/articles/s41377-026-02397-0",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2026nonlocal-02",
+    "paper_id": "wei2026nonlocal",
+    "figure": "Fig. 2b",
+    "label": "非局域性与自由度概念比较",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "concept, nonlocality, degrees_of_freedom",
+    "recipe": "仅用用户定义的示意坐标并明确标注概念图；原图位置表达定性关系，禁止当实验数据拟合。",
+    "source_url": "https://www.nature.com/articles/s41377-026-02397-0",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "cao2025dispersion-01",
+    "paper_id": "cao2025dispersion",
+    "figure": "Fig. 1b",
+    "label": "偏振编码映射流程",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "波长通道、编码函数、强度通道按层排列；边表示映射关系。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01766-5",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "cao2025dispersion-02",
+    "paper_id": "cao2025dispersion",
+    "figure": "Fig. 1c",
+    "label": "不同单元数量角度响应",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "polarizer_angle_deg, unit_number, normalized_transmission",
+    "recipe": "单元数量分组叠加曲线，共用归一化基准；突出响应宽度而非装饰性效果。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01766-5",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-01",
+    "paper_id": "han2025review",
+    "figure": "Fig. 6d,h,k",
+    "label": "功率响应标定类别",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "power, response, device_type",
+    "recipe": "按器件分组考察线性与幂律等候选模型；模型选择依赖数据和机理，不自动宣称线性。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-02",
+    "paper_id": "han2025review",
+    "figure": "Fig. 8e",
+    "label": "光脉冲时域响应",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "time, stimulus, photocurrent",
+    "recipe": "共用时间轴展示输入与输出，记录延迟定义与采样间隔。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-03",
+    "paper_id": "han2025review",
+    "figure": "Fig. 9b",
+    "label": "线偏振极坐标响应",
+    "patterns": [
+      "polar"
+    ],
+    "data_schema": "angle_deg, photocurrent_magnitude, device",
+    "recipe": "角度转换弧度后用极轴，周期闭合前确认重复端点；有符号光电流优先改为笛卡尔曲线。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-04",
+    "paper_id": "han2025review",
+    "figure": "Fig. 9f",
+    "label": "偏压偏振响应二维图",
+    "patterns": [
+      "heatmap"
+    ],
+    "data_schema": "bias_voltage, polarization_angle_deg, response",
+    "recipe": "二维网格展示控制参数和偏振输入，共享以零为中心色标。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-05",
+    "paper_id": "han2025review",
+    "figure": "Fig. 11c,f",
+    "label": "多波段探测响应谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength, detector_mode, responsivity",
+    "recipe": "模式用不同颜色，波长覆盖跨度大时考虑对数横轴；不要跨缺失波段连接。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-06",
+    "paper_id": "han2025review",
+    "figure": "Fig. 14a-c",
+    "label": "文献器件性能比较",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "device, wavelength_or_resolution, performance, source_doi",
+    "recipe": "每个点必须附带来源 DOI 与测试条件；不同温度或偏压不能无说明合并排名。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-07",
+    "paper_id": "han2025review",
+    "figure": "Table 4",
+    "label": "偏振探测器文献比较表",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "framework, mechanism, function, polarization_metric, wavelength, source",
+    "recipe": "三线表呈现结构与性能，保留单位及缺失值；不同 PR/g 定义需脚注说明。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "han2025review-08",
+    "paper_id": "han2025review",
+    "figure": "Table 6",
+    "label": "光谱探测器比较表",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "framework, mechanism, ports, footprint, wavelength, source",
+    "recipe": "类别列左对齐，数值列按精度统一；用脚注记录波段与面积定义。",
+    "source_url": "https://www.nature.com/articles/s41377-025-01995-8",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "sun2026review-01",
+    "paper_id": "sun2026review",
+    "figure": "Fig. 2a",
+    "label": "光到电子态再到输出的信息映射",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "输入偏振、电子态、输出通道分层连接；每条箭头只表达一个映射。",
+    "source_url": "https://doi.org/10.1021/acs.chemrev.5c00693",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "sun2026review-02",
+    "paper_id": "sun2026review",
+    "figure": "Fig. 6e,f",
+    "label": "双响应通道偏振散点",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "channel1, channel2, polarization_angle, amplitude",
+    "recipe": "以通道响应为两个轴，颜色表示角度；幅度分组显示，不默认线性回归。",
+    "source_url": "https://doi.org/10.1021/acs.chemrev.5c00693",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "sun2026review-03",
+    "paper_id": "sun2026review",
+    "figure": "Fig. 28b",
+    "label": "静电势二维分布",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "x, y, electrostatic_potential",
+    "recipe": "绘制标有电势单位的发散色图；几何边界需由器件结构元数据提供。",
+    "source_url": "https://doi.org/10.1021/acs.chemrev.5c00693",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "sun2026review-04",
+    "paper_id": "sun2026review",
+    "figure": "Fig. 28h",
+    "label": "光电流偏振极图",
+    "patterns": [
+      "polar"
+    ],
+    "data_schema": "angle_deg, nonnegative_response",
+    "recipe": "先确认半径物理量为非负；负响应需保留符号并换用直角坐标。",
+    "source_url": "https://doi.org/10.1021/acs.chemrev.5c00693",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "sun2026review-05",
+    "paper_id": "sun2026review",
+    "figure": "Table 1",
+    "label": "响应机制分类表",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "response_type, incidence_mode, mechanism, source",
+    "recipe": "按物理机制分组，合并表头可转为重复标签保证 CSV 可读。",
+    "source_url": "https://doi.org/10.1021/acs.chemrev.5c00693",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "sun2026review-06",
+    "paper_id": "sun2026review",
+    "figure": "Table 2",
+    "label": "偏振探测对称性要求",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "response_type, linear_polarization_requirement, circular_polarization_requirement",
+    "recipe": "文字表格列宽按内容设置，长句换行；结论来自文献，不能从数值表自动推断。",
+    "source_url": "https://doi.org/10.1021/acs.chemrev.5c00693",
+    "evidence": "local_full_text_caption; secondary_article_pattern: consult original cited paper before reusing scientific claims",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-01",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 1",
+    "label": "计算光谱与神经网络流程",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "按光源、样品、编码器、传感器、重建、任务输出排列；区分光路和计算步骤。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-02",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 2d",
+    "label": "仿真测量透射谱",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength_nm, structure, measured, simulated",
+    "recipe": "结构保持统一颜色，线型区分仿真和实验；必要时按结构分面。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-03",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 2e",
+    "label": "滤波器响应相关矩阵",
+    "patterns": [
+      "correlation",
+      "heatmap"
+    ],
+    "data_schema": "wavelength_nm, filter_001, filter_002, ...",
+    "recipe": "从各滤波器谱计算 Pearson 相关矩阵；排除恒定列并将其标为无定义。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-04",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 3a",
+    "label": "窄峰光谱重建对照",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "wavelength_nm, reference, reconstructed",
+    "recipe": "参考与重建叠加，并给目标峰设置局部坐标范围；比较峰位和 FWHM。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-05",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 3h-k",
+    "label": "多类重建误差指标",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "sample, mse, peak_shift, amplitude_error, fwhm_error",
+    "recipe": "将不同量纲指标分列或分面；这是原统计面板的表格迁移方案，不自动重算未给出的指标。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-06",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 4g",
+    "label": "网络训练损失曲线",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "epoch, training_loss, validation_loss",
+    "recipe": "显示训练和验证曲线，原始波动可保留；平滑如开启需标注方法。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-07",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 4h",
+    "label": "超参数与预测成功率",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "hyperparameter_value, task, success_rate",
+    "recipe": "按回归和分类任务分组，成功定义在图注写明；离散参数用点线。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zhang2024snapshot-08",
+    "paper_id": "zhang2024snapshot",
+    "figure": "Fig. 4j",
+    "label": "溶质分类混淆矩阵",
+    "patterns": [
+      "heatmap"
+    ],
+    "data_schema": "true_label, predicted_label, count",
+    "recipe": "先汇总真实与预测类别计数，再提供按行归一化选项；色标注明计数或比例。",
+    "source_url": "https://doi.org/10.1515/nanoph-2024-0328",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "immersion2019-01",
+    "paper_id": "immersion2019",
+    "figure": "Fig. 1b",
+    "label": "柱径与有效折射率相位",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "pillar_diameter_nm, effective_index, phase",
+    "recipe": "不同量纲优先上下两行共享柱径轴；标明相位单位。",
+    "source_url": "https://www.nature.com/articles/s41467-019-10238-5",
+    "evidence": "publisher_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "immersion2019-02",
+    "paper_id": "immersion2019",
+    "figure": "Fig. 3b",
+    "label": "接受角与耦合收集效率",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "acceptance_angle_deg, coupling_efficiency, collection_efficiency",
+    "recipe": "共用角度轴展示两个效率，指定收集光学 NA 可加参考线。",
+    "source_url": "https://www.nature.com/articles/s41467-019-10238-5",
+    "evidence": "publisher_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "immersion2019-03",
+    "paper_id": "immersion2019",
+    "figure": "Fig. 3c,d",
+    "label": "NA 焦距与不确定度",
+    "patterns": [
+      "errorbar"
+    ],
+    "data_schema": "wavelength_nm, measured, lower_error, upper_error, simulated",
+    "recipe": "允许非对称误差棒，仿真点使用空心符号；NA 与焦距分别绘制。",
+    "source_url": "https://www.nature.com/articles/s41467-019-10238-5",
+    "evidence": "publisher_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "immersion2019-04",
+    "paper_id": "immersion2019",
+    "figure": "Fig. 3e,f",
+    "label": "仿真测量焦斑分布",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "x_nm, z_nm, intensity, source",
+    "recipe": "按来源和截面分面并共享空间尺度，去卷积处理必须在图注标明。",
+    "source_url": "https://www.nature.com/articles/s41467-019-10238-5",
+    "evidence": "publisher_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "immersion2019-05",
+    "paper_id": "immersion2019",
+    "figure": "Fig. 3g",
+    "label": "焦点横向轴向截线",
+    "patterns": [
+      "spectrum_lines",
+      "scatter_fit"
+    ],
+    "data_schema": "position_nm, measured_intensity, simulated_intensity",
+    "recipe": "测量点叠加模拟实线；统一归一化方式并分开展示 x/z 截线。",
+    "source_url": "https://www.nature.com/articles/s41467-019-10238-5",
+    "evidence": "publisher_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "achromatic2018-01",
+    "paper_id": "achromatic2018",
+    "figure": "Fig. 3",
+    "label": "消色差焦移与强度分布",
+    "patterns": [
+      "spectrum_lines",
+      "heatmap"
+    ],
+    "data_schema": "wavelength_nm, focal_length, axial_position, intensity",
+    "recipe": "焦距随波长曲线和二维强度图分别呈现；此条只核对出版页图题，子图细节待补。",
+    "source_url": "https://www.nature.com/articles/s41565-017-0034-6",
+    "evidence": "publisher_figure_title_only",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "achromatic2018-02",
+    "paper_id": "achromatic2018",
+    "figure": "Fig. 4",
+    "label": "不同波长焦斑截线",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "position, wavelength_nm, focal_intensity",
+    "recipe": "同一空间横轴叠加波长系列，光斑照片需用户图像；此条只核对出版页图题。",
+    "source_url": "https://www.nature.com/articles/s41565-017-0034-6",
+    "evidence": "publisher_figure_title_only",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "metaoptics2022-01",
+    "paper_id": "metaoptics2022",
+    "figure": "Fig. 4b",
+    "label": "多波长轴向焦场",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "z_um, wavelength_nm, normalized_intensity",
+    "recipe": "波长分组画轴向强度，统一归一化；可画多面板避免曲线遮挡。",
+    "source_url": "https://www.nature.com/articles/s41467-022-29973-3",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "metaoptics2022-02",
+    "paper_id": "metaoptics2022",
+    "figure": "Fig. 4c",
+    "label": "波长分面的实测 XZ 场",
+    "patterns": [
+      "heatmap",
+      "contour"
+    ],
+    "data_schema": "x_um, z_um, wavelength_nm, intensity",
+    "recipe": "每个波长一个空间图，统一空间比例与色标。",
+    "source_url": "https://www.nature.com/articles/s41467-022-29973-3",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "metaoptics2022-03",
+    "paper_id": "metaoptics2022",
+    "figure": "Fig. 4d",
+    "label": "焦斑 FWHM 与理想衍射极限",
+    "patterns": [
+      "scatter_fit"
+    ],
+    "data_schema": "wavelength_nm, numerical_aperture, measured_fwhm, airy_fwhm",
+    "recipe": "测量点对照理想预测线；NA 分组，理想值由明确模型输入而非经验拟合。",
+    "source_url": "https://www.nature.com/articles/s41467-022-29973-3",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "zipnerf2023-01",
+    "paper_id": "zipnerf2023",
+    "figure": "Fig. 2",
+    "label": "多尺度特征与采样策略对照",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "coordinate, scale, method, feature_value",
+    "recipe": "按方法分面，尺度用统一颜色；纵向偏移只用于清楚展示并须标注。",
+    "source_url": "https://openaccess.thecvf.com/content/ICCV2023/papers/Barron_Zip-NeRF_Anti-Aliased_Grid-Based_Neural_Radiance_Fields_ICCV_2023_paper.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "mip3602022-01",
+    "paper_id": "mip3602022",
+    "figure": "Fig. 1 depth panels",
+    "label": "方法比较的深度图",
+    "patterns": [
+      "heatmap"
+    ],
+    "data_schema": "pixel_x, pixel_y, method, depth",
+    "recipe": "不同方法共享深度色标与裁剪窗口；真实 RGB 图像比较需要另外提供图像。",
+    "source_url": "https://openaccess.thecvf.com/content/CVPR2022/papers/Barron_Mip-NeRF_360_Unbounded_Anti-Aliased_Neural_Radiance_Fields_CVPR_2022_paper.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "dip2018-01",
+    "paper_id": "dip2018",
+    "figure": "Fig. 2",
+    "label": "不同输入结构的收敛曲线",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "iteration, input_type, mse",
+    "recipe": "使用对数迭代横轴对比不同输入类型，保留每条曲线的实际训练步数。",
+    "source_url": "https://www.robots.ox.ac.uk/~vedaldi/assets/pubs/ulyanov18deep.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "sid2018-01",
+    "paper_id": "sid2018",
+    "figure": "Table 1",
+    "label": "成像数据集采集条件表",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "camera, exposure_ratio, color_filter_array, exposure_seconds, image_count",
+    "recipe": "按相机分组列出采集条件与样本量；单位放表头，计数使用整数。",
+    "source_url": "https://openaccess.thecvf.com/content_cvpr_2018/papers/Chen_Learning_to_See_CVPR_2018_paper.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "adfactory2024-01",
+    "paper_id": "adfactory2024",
+    "figure": "Fig. 2 depth panels",
+    "label": "两种深度估计空间图",
+    "patterns": [
+      "heatmap"
+    ],
+    "data_schema": "pixel_x, pixel_y, depth_type, depth",
+    "recipe": "两种深度图共享色标，参考点位置固定以便定位射线曲线。",
+    "source_url": "https://openaccess.thecvf.com/content/CVPR2024/papers/Ling_ADFactory_An_Effective_Framework_for_Generalizing_Optical_Flow_with_NeRF_CVPR_2024_paper.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "adfactory2024-02",
+    "paper_id": "adfactory2024",
+    "figure": "Fig. 2 ray curves",
+    "label": "射线距离权重分布",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "ray_distance, ray_id, weight, cumulative_weight",
+    "recipe": "按射线分面同时显示权重与累计量，分别注明归一化定义。",
+    "source_url": "https://openaccess.thecvf.com/content/CVPR2024/papers/Ling_ADFactory_An_Effective_Framework_for_Generalizing_Optical_Flow_with_NeRF_CVPR_2024_paper.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "adfactory2024-03",
+    "paper_id": "adfactory2024",
+    "figure": "Fig. 3",
+    "label": "数据生成与筛选流程",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target, label",
+    "recipe": "从多视角图像到辐射场、光流生成、可信度筛选、训练数据依次组织；分支注明输入输出。",
+    "source_url": "https://openaccess.thecvf.com/content/CVPR2024/papers/Ling_ADFactory_An_Effective_Framework_for_Generalizing_Optical_Flow_with_NeRF_CVPR_2024_paper.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "microfacet2023-01",
+    "paper_id": "microfacet2023",
+    "figure": "Table 1",
+    "label": "跨数据集多指标比较",
+    "patterns": [
+      "table"
+    ],
+    "data_schema": "method, dataset, psnr, ssim, lpips, normal_mae_deg",
+    "recipe": "按数据集分块，表头以箭头标明优劣方向；最优值基于列指标方向判断。",
+    "source_url": "https://openaccess.thecvf.com/content/ICCV2023/papers/Mai_Neural_Microfacet_Fields_for_Inverse_Rendering_ICCV_2023_paper.pdf",
+    "evidence": "primary_search_index_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14"
+  },
+  {
+    "id": "wei2020graphene-09",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 1b",
+    "label": "偏振调制到电学读出的光路流程",
+    "patterns": [
+      "flowchart"
+    ],
+    "data_schema": "source, target",
+    "recipe": "将原图的光源、半波片、反射镜、样品和电学读出抽象为节点。通用流程图只表达连接关系；不自动生成真实器件结构或光线传播。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14",
+    "visual_review": {
+      "status": "reviewed",
+      "pdf_page": 3,
+      "date": "2026-09-14",
+      "method": "local PDF page rendered with Windows PDF engine and inspected"
+    }
+  },
+  {
+    "id": "wei2020graphene-10",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 1c",
+    "label": "多偏振条件的近场强度分布",
+    "patterns": [
+      "heatmap"
+    ],
+    "data_schema": "x_nm, y_nm, field_intensity, polarization_condition",
+    "recipe": "同一网格分别画各偏振条件的强度热图。原图还叠加矢量电流箭头；通用热图只能复用标量层，矢量与结构需单独提供数据。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14",
+    "visual_review": {
+      "status": "reviewed",
+      "pdf_page": 3,
+      "date": "2026-09-14",
+      "method": "local PDF page rendered with Windows PDF engine and inspected"
+    }
+  },
+  {
+    "id": "wei2020graphene-11",
+    "paper_id": "wei2020graphene",
+    "figure": "Fig. 1d",
+    "label": "带正负号的偏振电流",
+    "patterns": [
+      "spectrum_lines"
+    ],
+    "data_schema": "angle_deg, signed_photocurrent",
+    "recipe": "原图用径向幅值和红蓝区域同时表示偏振响应的大小及符号。当前自动模板使用角度—有符号响应折线，保留零点和正负号；不得直接取绝对值后当作完整复现。",
+    "source_url": "https://www.nature.com/articles/s41467-020-20115-1",
+    "evidence": "local_full_text_caption",
+    "implementation_scope": "structural_recipe; not_pixel_identical_reproduction",
+    "checked_date": "2026-09-14",
+    "visual_review": {
+      "status": "reviewed",
+      "pdf_page": 3,
+      "date": "2026-09-14",
+      "method": "local PDF page rendered with Windows PDF engine and inspected"
+    }
+  }
+]
