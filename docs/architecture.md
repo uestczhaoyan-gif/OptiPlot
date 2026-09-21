@@ -48,6 +48,8 @@ flowchart LR
 
 `tests/test_style.py` 里两个测试各守一类静默失败：`test_chinese_text_actually_renders_with_the_default_style` 把字形缺失的 UserWarning 提升为错误，`test_family_knob_changes_latin_glyphs_when_cjk_is_off` 用 PNG 哈希证明 `family` 真的改变了像素。改排版相关代码时不要绕过它们。
 
+**测试不得断言本机字体存在。** CI 跑 Ubuntu，字体集与开发用的 Windows 完全不同：断言 `font_stack()[0] == "Times New Roman"` 在 Windows 绿、在 CI 红，而且失败原因与代码无关。约定是：需要具体字体名时用 `first_installed(FAMILY_PRESETS[...])` 比较解析结果，需要中文字形时用 `require_cjk()` 在无字体环境跳过。验证办法是临时把 `installed_families` 收窄到只有 DejaVu 再跑一遍，应当是 skip 而不是 fail。
+
 ## 数据层的来历
 
 `catalog/styles.json` 由 `catalog/cases.json`（108 条带出处的案例）迁移而来，迁移脚本保留在 `research/migrate_cases_to_styles.py`。迁移丢弃了 `paper_id` / `figure` / `source_url` / `evidence` / `implementation_scope` / `checked_date` / `visual_review` 七个逐条出处字段，保留 `label` / `patterns` / `data_schema` / `recipe`。

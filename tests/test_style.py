@@ -17,9 +17,41 @@ from optiplot import analyze_dataframe, analyze_file, recommend
 import zipfile
 from optiplot.render import render
 from optiplot.export import export_bundle
-from optiplot.style import Style, SIZES, PRESET_FONT, DATA_KEYS, MARKERS, MARKER_FILLS, SHADINGS, installed_families
+from optiplot.style import (
+    CJK_PRESETS,
+    FAMILY_PRESETS,
+    Style,
+    SIZES,
+    PRESET_FONT,
+    DATA_KEYS,
+    MARKERS,
+    MARKER_FILLS,
+    SHADINGS,
+    installed_families,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
+def first_installed(candidates):
+    """The font assertions must not encode which machine ran them: CI is Ubuntu
+    with a different font set, so compare against the first candidate that
+    actually exists here rather than a literal family name."""
+    installed = installed_families()
+    for name in candidates:
+        if name in installed:
+            return name
+    pytest.skip(f"none of {candidates} installed on this runner")
+
+
+CJK_CANDIDATES = [
+    name for names in CJK_PRESETS.values() for name in names if name in installed_families()
+]
+
+
+def require_cjk():
+    if not CJK_CANDIDATES:
+        pytest.skip("no CJK font installed; Chinese glyph coverage cannot be tested")
+
+
 
 
 def profile():
@@ -80,22 +112,28 @@ def test_stack_always_ends_with_an_installed_font():
 def test_cjk_none_hands_the_latin_family_full_control():
     """The two knobs are mutually exclusive by design, so this is the case where
     `family` actually reaches Latin glyphs."""
-    assert Style(family="serif", cjk="none").font_stack()[0] == "Times New Roman"
-    assert Style(family="mono", cjk="none").font_stack()[0] == "Consolas"
+    assert Style(family="serif", cjk="none").font_stack()[0] == first_installed(
+        FAMILY_PRESETS["serif"]
+    )
+    assert Style(family="mono", cjk="none").font_stack()[0] == first_installed(
+        FAMILY_PRESETS["mono"]
+    )
 
 
 def test_a_cjk_font_leads_and_therefore_owns_latin_text_too():
     """Documents the Matplotlib constraint rather than fighting it: with a CJK
     font selected, `family` cannot show through, because Matplotlib does not
     fall back per glyph and YaHei carries Latin shapes."""
+    require_cjk()
     stack = Style(family="serif", cjk="yahei").font_stack()
-    assert stack[0] == "Microsoft YaHei"
-    assert "Times New Roman" in stack  # still the fallback for uncovered glyphs
+    assert stack[0] in CJK_CANDIDATES, stack
+    assert first_installed(FAMILY_PRESETS["serif"]) in stack  # fallback for gaps
 
 
 def test_chinese_text_actually_renders_with_the_default_style():
     """Tofu is the failure mode here, and it is silent. Matplotlib warns rather
     than raises, so assert the warning never fires on a Chinese label."""
+    require_cjk()
     ax = drawn({"title": "光束强度二维分布", "xlabel": "横向位置 / μm"})[1]
     fig = ax.figure
     with warnings.catch_warnings():
@@ -173,18 +211,15 @@ def test_default_stack_still_carries_a_cjk_font():
     it would silently turn every Chinese axis label into tofu boxes."""
     from optiplot.style import CJK_PRESETS
 
-    installed_cjk = {
-        name for names in CJK_PRESETS.values() for name in names if name in installed_families()
-    }
-    if not installed_cjk:
-        pytest.skip("no CJK font installed (CI runners may not ship one)")
-    stack = Style().font_stack()
-    assert installed_cjk & set(stack), f"no CJK font in {stack}"
+    require_cjk()
+    assert set(CJK_CANDIDATES) & set(Style().font_stack()), "no CJK font in the default stack"
 
 
 def test_cjk_family_is_resolvable():
-    stack = Style(cjk="songti").font_stack()
-    assert "SimSun" in stack
+    require_cjk()
+    if "SimSun" not in installed_families():
+        pytest.skip("SimSun is a Windows font")
+    assert "SimSun" in Style(cjk="songti").font_stack()
 
 
 def test_colourbar_scale_is_applied_at_artist_level():
