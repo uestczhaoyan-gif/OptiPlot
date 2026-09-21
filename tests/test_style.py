@@ -15,7 +15,7 @@ import pytest
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from optiplot import analyze_dataframe, analyze_file, recommend
 from optiplot.render import render
-from optiplot.style import Style, SIZES, PRESET_FONT, DATA_KEYS, installed_families
+from optiplot.style import Style, SIZES, PRESET_FONT, DATA_KEYS, MARKERS, MARKER_FILLS, SHADINGS, installed_families
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -487,6 +487,210 @@ def test_legend_and_palette_knobs_change_the_rendered_pixels():
         {"legend_frame": True, "legend_frame_alpha": 1.0},
         {"palette": "tol_muted"},
         {"palette": "custom", "custom_colors": "#111111,#222222,#333333"},
+    ):
+        assert digest(**kw) != base, f"{kw} changed nothing"
+
+
+# ── D data series ─────────────────────────────────────────────────
+
+
+def test_line_width_reaches_the_line():
+    assert drawn({"line_width": 4.0})[1].lines[0].get_linewidth() == 4.0
+
+
+def test_line_style_cycles_only_when_asked():
+    ax = drawn({"vary_line_style": True})[1]
+    styles = {l.get_linestyle() for l in ax.lines}
+    assert len(styles) > 1
+    flat = drawn({"vary_line_style": False})[1]
+    assert {l.get_linestyle() for l in flat.lines} == {"-"}
+
+
+def test_markers_can_be_added_and_hollowed():
+    solid = drawn({"marker": "o", "marker_size": 9.0})[1].lines[0]
+    assert solid.get_marker() == "o" and solid.get_markersize() == 9.0
+    hollow = drawn({"marker": "o", "marker_fill": "none"})[1].lines[0]
+    assert hollow.get_fillstyle() == "none"
+
+
+def test_marker_every_thins_the_markers():
+    line = drawn({"marker": "o", "marker_every": 5})[1].lines[0]
+    assert line.get_markevery() == 5
+
+
+def test_step_switches_to_a_stepped_line():
+    assert drawn({"step": True})[1].lines[0].get_drawstyle() == "steps-mid"
+    assert drawn({"step": False})[1].lines[0].get_drawstyle() == "default"
+
+
+def test_points_only_drops_the_connecting_line():
+    """The default must not invent a trend between unconnected measurements."""
+    line = drawn({"show_lines": False, "show_points": True})[1].lines[0]
+    assert line.get_linestyle() == "None"
+    assert line.get_linewidth() == 0.0
+
+
+def test_series_alpha_and_zorder_reach_the_line():
+    line = drawn({"series_alpha": 0.4, "series_zorder": 7})[1].lines[0]
+    assert line.get_alpha() == 0.4
+    assert line.get_zorder() == 7
+
+
+def test_scatter_knobs_reach_the_collection():
+    p = analyze_file(ROOT / "examples" / "sample_dense_scatter.csv")
+    rec = next(r for r in recommend(p) if r.id == "scatter_fit")
+    coll = render(p, rec, style=Style(scatter_size=60.0, scatter_alpha=0.2,
+                                      scatter_edge=True)).axes[0].collections[0]
+    assert coll.get_sizes()[0] == 60.0
+    assert coll.get_alpha() == 0.2
+    assert (coll.get_edgecolors() != 0).any()
+
+
+def test_rasterize_threshold_is_respected():
+    p = analyze_file(ROOT / "examples" / "sample_dense_scatter.csv")
+    rec = next(r for r in recommend(p) if r.id == "scatter_fit")
+    assert render(p, rec, style=Style(rasterize_above=10)).axes[0].collections[0].get_rasterized()
+    assert not render(
+        p, rec, style=Style(rasterize_above=10_000_000)
+    ).axes[0].collections[0].get_rasterized()
+
+
+def test_errorbar_cap_and_line_width_reach_the_caps():
+    p = analyze_file(ROOT / "examples" / "sample_explicit_error.csv")
+    rec = next(r for r in recommend(p) if r.id == "errorbar")
+    ax = render(p, rec, style=Style(error_cap_size=9.0, error_line_width=2.5)).axes[0]
+    widths = []
+    for part in ax.containers[0]:
+        for item in part if isinstance(part, (list, tuple)) else [part]:
+            value = item.get_linewidth()
+            widths.extend(float(v) for v in (value if hasattr(value, "__len__") else [value]))
+    assert 2.5 in widths, f"error_line_width never reached an artist: {widths}"
+
+
+def test_contour_level_count_reaches_the_artist():
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    rec = next(r for r in recommend(p) if r.id == "contour")
+    few = render(p, rec, style=Style(contour_levels=3)).axes[0].collections[0]
+    many = render(p, rec, style=Style(contour_levels=40)).axes[0].collections[0]
+    assert len(few.get_array()) < len(many.get_array())
+
+
+def test_hexbin_gridsize_changes_the_bin_count():
+    p = analyze_file(ROOT / "examples" / "sample_dense_scatter.csv")
+    rec = next(r for r in recommend(p) if r.id == "density")
+    coarse = render(p, rec, style=Style(hexbin_gridsize=8)).axes[0].collections[0]
+    fine = render(p, rec, style=Style(hexbin_gridsize=80)).axes[0].collections[0]
+    assert len(coarse.get_offsets()) < len(fine.get_offsets())
+
+
+def test_image_shading_reaches_the_mesh():
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    rec = next(r for r in recommend(p) if r.id == "heatmap")
+    # QuadMesh has no get_shading(), and matplotlib silently substitutes "auto"
+    # for an unrecognised value, so assert on the mesh geometry the mode produced
+    # rather than on the string.
+    def rows(shading):
+        return render(p, rec, style=Style(image_shading=shading)).axes[0]             .collections[0].get_coordinates()[0].shape[0]
+
+    assert rows("nearest") > rows("gouraud")
+
+
+def test_colorbar_geometry_reaches_the_layout():
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    rec = next(r for r in recommend(p) if r.id == "heatmap")
+    thin = render(p, rec, style=Style(colorbar_thickness=0.02)).axes[-1].get_position().width
+    fat = render(p, rec, style=Style(colorbar_thickness=0.2)).axes[-1].get_position().width
+    # constrained layout redistributes, so the ratio compresses; monotonic is the real contract
+    assert fat > thin * 1.5
+
+
+def test_every_offered_choice_is_actually_accepted_by_matplotlib():
+    """Matplotlib silently substitutes an unrecognised shading value and only
+    emits a warning, so a choice list can advertise an option that does nothing.
+    Assert no such substitution warning fires for any value we offer."""
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    rec = next(r for r in recommend(p) if r.id == "heatmap")
+    for shading in SHADINGS:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            render(p, rec, style=Style(image_shading=shading))
+        noisy = [str(w.message) for w in caught if "not in list of valid values" in str(w.message)]
+        assert not noisy, f"image_shading={shading!r} was rejected: {noisy}"
+
+
+def test_every_offered_marker_and_fillstyle_survives_a_real_draw():
+    """Same class of failure as shading, and this guard has to actually draw:
+    a bad fillstyle only surfaces when the marker is rendered, so constructing
+    the figure and checking the attribute would have let it through."""
+    p = profile()
+    rec = recommend(p)[0]
+    for marker in MARKERS:
+        if marker == "none":
+            continue
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            ax = render(p, rec, style=Style(marker=marker)).axes[0]
+            FigureCanvasAgg(ax.figure)
+            ax.figure.canvas.draw()
+        assert ax.lines[0].get_marker() == marker
+        assert not [w for w in caught if w.category is UserWarning], (
+            f"marker={marker!r} warned: {[str(w.message) for w in caught]}"
+        )
+    for fill in MARKER_FILLS:
+        ax = render(p, rec, style=Style(marker="s", marker_fill=fill)).axes[0]
+        FigureCanvasAgg(ax.figure)
+        ax.figure.canvas.draw()
+        assert ax.lines[0].get_fillstyle() == fill, f"fillstyle={fill!r} not applied"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"line_width": 0},
+        {"line_width": 50},
+        {"marker": "hexagon"},
+        {"marker_fill": "striped"},
+        {"marker_size": -1},
+        {"marker_every": 0},
+        {"series_alpha": 2},
+        {"scatter_alpha": -0.5},
+        {"fill_alpha": 9},
+        {"error_cap_size": 99},
+        {"contour_levels": 0},
+        {"hexbin_gridsize": 2},
+        {"image_shading": "bilinear"},
+        {"colorbar_thickness": 0},
+        {"colorbar_pad": 5},
+        {"rasterize_above": 0},
+        {"series_zorder": 9999},
+        {"show_lines": False, "show_points": False},
+    ],
+)
+def test_bad_series_values_are_rejected(bad):
+    with pytest.raises(ValueError):
+        Style(**bad).validate()
+
+
+def test_series_knobs_change_the_rendered_pixels():
+    import hashlib
+
+    def digest(**kw):
+        fig = render(profile(), recommend(profile())[0], style=Style(**kw))
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=110)
+        fig.clear()
+        return hashlib.sha256(buf.getvalue()).hexdigest()
+
+    base = digest()
+    for kw in (
+        {"line_width": 5.0},
+        {"vary_line_style": False},
+        {"marker": "s", "marker_size": 8.0},
+        {"marker": "o", "marker_fill": "none"},
+        {"marker": "o", "marker_every": 6},
+        {"step": True},
+        {"show_lines": False, "show_points": True},
+        {"series_alpha": 0.3},
     ):
         assert digest(**kw) != base, f"{kw} changed nothing"
 

@@ -57,7 +57,8 @@ def _legend(ax, style, **overrides):
 
 def _colorbar(fig, m, ax, label, style):
     """Artist-level styling: the one routing point rcParams cannot reach."""
-    cb = fig.colorbar(m, ax=ax, label=label)
+    cb = fig.colorbar(m, ax=ax, label=label, fraction=style.colorbar_thickness,
+                            pad=style.colorbar_pad)
     cb.outline.set_linewidth(0.7)
     cb.ax.yaxis.label.set_fontsize(style.resolved_font_size() * style.colorbar_scale)
     return cb
@@ -166,9 +167,9 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 d[xname],
                 d[yname],
                 color=palette[i % len(palette)],
-                linestyle=["-", "--", "-.", ":"][i % 4],
-                lw=1.65,
+                drawstyle="steps-mid" if style.step else "default",
                 label=yname,
+                **style.series_style(i),
             )
         ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
         if len(ys) > 1:
@@ -178,12 +179,21 @@ def _draw(ax, fig, df, kind, e, opts, style):
         d = _finite(df, [xname, yname])
         x, y = d[xname].to_numpy(), d[yname].to_numpy()
         if kind == "density":
-            m = ax.hexbin(x, y, gridsize=45, mincnt=1,
-                             cmap=style.cmap if style.cmap != "auto" else "viridis", bins="log")
+            m = ax.hexbin(x, y, mincnt=1,
+                             cmap=style.cmap if style.cmap != "auto" else "viridis",
+                             bins="log", gridsize=style.hexbin_gridsize)
             _colorbar(fig, m, ax, "Count (log color scale)", style)
         else:
             ax.scatter(
-                x, y, s=16, alpha=0.65, color=palette[0 % len(palette)], edgecolors="none", rasterized=len(d) > 5000
+                x,
+                y,
+                s=style.scatter_size,
+                alpha=style.scatter_alpha,
+                color=palette[0 % len(palette)],
+                edgecolors=(palette[0 % len(palette)] if style.scatter_edge else "none"),
+                linewidths=style.marker_edge_width if style.scatter_edge else 0,
+                rasterized=len(d) > style.rasterize_above,
+                zorder=style.series_zorder,
             )
             if opts.get("fit", e.get("fit", "none")) == "linear":
                 if len(d) < 3 or np.unique(x).size < 2:
@@ -209,7 +219,14 @@ def _draw(ax, fig, df, kind, e, opts, style):
             if np.any(err < 0):
                 raise ValueError("误差值不能为负数。")
             ax.errorbar(
-                d[xname], d[yname], yerr=err, fmt="o", ms=4, capsize=3, color=palette[0 % len(palette)], label=yerr
+                d[xname],
+                d[yname],
+                yerr=err,
+                fmt=style.marker if style.marker != "none" else "o",
+                ms=style.marker_size,
+                color=palette[0 % len(palette)],
+                label=yerr,
+                **style.errorbar_kwargs(),
             )
         else:
             d = _finite(df, [xname, yname])
@@ -241,9 +258,9 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 s.index,
                 s["mean"],
                 yerr=err,
-                fmt="o-",
-                ms=4,
-                capsize=3,
+                fmt="o-" if style.show_lines else "o",
+                ms=style.marker_size,
+                lw=style.line_width,
                 color=palette[0 % len(palette)],
                 label=label,
             )
@@ -283,9 +300,12 @@ def _draw(ax, fig, df, kind, e, opts, style):
             limit = float(np.nanmax(np.abs(z)))
             norm = TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit)
         if kind == "contour":
-            m = ax.contourf(ux, uy, z, levels=14, cmap=cmap, norm=norm)
+            m = ax.contourf(ux, uy, z, levels=style.contour_levels, cmap=cmap, norm=norm)
         else:
-            m = ax.pcolormesh(ux, uy, np.ma.masked_invalid(z), shading="auto", cmap=cmap, norm=norm)
+            m = ax.pcolormesh(
+                ux, uy, np.ma.masked_invalid(z), cmap=cmap, norm=norm,
+                shading=style.image_shading,
+            )
         _colorbar(fig, m, ax, zn, style)
         ax.set(xlabel=xn, ylabel=yn)
         ax.grid(False)
@@ -299,7 +319,13 @@ def _draw(ax, fig, df, kind, e, opts, style):
         if (d[r] < 0).any():
             raise ValueError("极坐标半径存在负值，请使用角度-响应折线图以保留符号。")
         ix = np.argsort(angles)
-        ax.plot(angles[ix], d[r].to_numpy()[ix], color=palette[0 % len(palette)], marker="o", ms=3, lw=1.5, label=r)
+        ax.plot(
+            angles[ix],
+            d[r].to_numpy()[ix],
+            color=palette[0 % len(palette)],
+            label=r,
+            **style.series_style(0),
+        )
         _legend(ax, style, loc="upper right", bbox_to_anchor=(1.35, 1.13))
         return
     elif kind in ["distribution", "box"]:
@@ -329,8 +355,8 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 ax.scatter(
                     i + 1 + rng.uniform(-0.13, 0.13, len(a)),
                     a,
-                    s=9,
-                    alpha=0.45,
+                    s=style.scatter_size * 0.5625,
+                    alpha=style.scatter_alpha,
                     color=palette[i % len(palette)],
                 )
             ax.set_xticks(range(1, len(labels) + 1), labels, rotation=20 if len(labels) > 5 else 0)
@@ -341,8 +367,9 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 a,
                 bins=min(80, max(5, int(np.sqrt(len(a))))),
                 color=palette[0 % len(palette)],
-                alpha=0.85,
+                alpha=style.series_alpha if style.series_alpha < 1 else 0.85,
                 edgecolor="white",
+                zorder=style.series_zorder,
             )
             ax.set(xlabel=value, ylabel="Count")
     elif kind == "correlation":

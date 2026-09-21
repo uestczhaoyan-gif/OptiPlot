@@ -130,7 +130,19 @@
 
 审计原状：`render.py` 里 13 处 `opts.get` 各写各的约定，约 20 处硬编码样式值（`lw=1.65`、`s=16`、`alpha=0.65`、`ms=4`、`capsize=3`、`gridsize=45`、`levels=14`、`fontsize="small"`、`frameon=False`…）。**先立管道，后续每个新图型对着管道写**，否则新分支会继续累积 ad-hoc 读取和硬编码，最后要回头统一改。
 
-**待做**：B 画布余下部分（自定义尺寸与单位、宽高比锁定、四边留白、布局方式、背景色）、D 数据系列（线宽、线型、标记形状与大小、填充方式、误差棒帽宽、柱宽、散点大小映射）、H 导出（TIFF、预览与导出 DPI 分离、SVG 字体路径或文本、透明背景、一次输出多尺寸）、I 样式预设（整套参数存成 JSON 配方并进可复现 ZIP）。
+**待做**：B 画布余下部分（自定义尺寸与单位、宽高比锁定、四边留白、布局方式、背景色）、H 导出（TIFF、预览与导出 DPI 分离、SVG 字体路径或文本、透明背景、一次输出多尺寸）、I 样式预设（整套参数存成 JSON 配方并进可复现 ZIP）。
+
+### N3a 补充 · D 数据系列（已完成）
+线宽、线型是否循环、标记形状（21 个码）、标记大小、填充样式（full/none/left/right/top/bottom）、标记边宽、`markevery` 抽稀、阶梯线、仅连线/仅点、系列 alpha、系列 zorder、误差棒帽宽与线宽、散点大小/透明度/描边/rasterize 阈值、等高线层数、六边形分箱密度、pcolormesh shading、色标厚度与间距、差异区填充。
+
+**这一组抓到的三类"能选不能用"错误**，都已变成测试：
+- `image_shading` 的候选里原本有 `"antialiased"`——它不是 pcolormesh 的合法值，matplotlib 只警告然后**静默换成 `auto`**。合法集是 `['gouraud','nearest','flat','auto']`。
+- `"flat"` 虽然是合法值，但要求坐标数组每个维度比数据大 1，实测网格永远不满足，直接报错。**能选 ≠ 能用**，已从候选中移除。
+- `marker_fill="left"` 原本被当作 `markerfacecolor` 传入，而半填充是 `fillstyle` 参数不是颜色，绘制时抛 `Invalid RGBA argument`。这个 bug 只在**真正绘制**时才暴露——构造图并读属性是查不出来的，所以守卫测试现在强制 `canvas.draw()`。
+
+由此立了一条通用做法：**任何"候选值列表"都要有测试把每个候选走一遍完整绘制**，而不是只断言它能被赋值。见 `test_every_offered_marker_and_fillstyle_survives_a_real_draw` 与 `test_every_offered_choice_is_actually_accepted_by_matplotlib`。
+
+另外删掉了 `error_direction` 字段：它被定义、被校验，但**从未接进渲染器**——是个彻底的死旋钮。而 x 方向误差需要的是 x 误差列，属于数据契约问题，不该放在样式层。
 - **判据**：每个参数有对应测试；预览与导出逐像素一致
 
 ### N3b · 图型专属参数（**跟随每个新图型**）

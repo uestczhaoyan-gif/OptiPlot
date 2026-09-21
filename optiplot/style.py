@@ -108,6 +108,21 @@ LEGEND_LOCS = (
 # "none" is intercepted by _legend before it can reach the rcParams dict.
 LEGEND_PARAM_DEFAULT = "best"
 LEGEND_TITLE_SIZES = ("small", "medium", "large", "x-large")
+# Cycled through when vary_line_style is on, so overlapping series stay
+# separable in a greyscale print.
+LINE_STYLES = ("-", "--", "-.", ":")
+MARKER_FILLS = ("full", "none", "left", "right", "bottom", "top")
+# pcolormesh takes `shading`, not imshow's `interpolation`; the two value sets
+# do not overlap, so the field is named for the call that actually uses it.
+# "flat" is a legal pcolormesh value but needs coordinates one larger than the
+# data in every dimension, which a measured grid never is - so it is not offered.
+SHADINGS = ("auto", "nearest", "gouraud")
+# Matplotlib marker codes worth exposing for optics plots; the full set is on
+# the docs page but these are the ones that survive small print sizes.
+MARKERS = (
+    "none", "o", "s", "^", "v", "<", ">", "D", "d", "p", "h", "+", "x", ".", ",",
+    "*", "1", "2", "3", "4", "|", "_",
+)
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
@@ -192,6 +207,32 @@ class Style:
     palette: str = "okabe"
     custom_colors: str = ""
     cmap: str = "auto"
+    # D data series
+    line_width: float = 1.65
+    vary_line_style: bool = True
+    marker: str = "none"
+    marker_size: float = 4.5
+    marker_fill: str = "full"
+    marker_edge_width: float = 0.8
+    marker_every: int | None = None
+    step: bool = False
+    show_lines: bool = True
+    show_points: bool = False
+    series_alpha: float = 1.0
+    series_zorder: int = 2
+    error_cap_size: float = 3.0
+    error_line_width: float | None = None
+    scatter_size: float = 16.0
+    scatter_alpha: float = 0.65
+    scatter_edge: bool = False
+    rasterize_above: int = 5000
+    contour_levels: int = 14
+    hexbin_gridsize: int = 45
+    image_shading: str = "nearest"
+    colorbar_thickness: float = 0.046
+    colorbar_pad: float = 0.03
+    fill_difference: bool = False
+    fill_alpha: float = 0.15
 
     @property
     def colors(self) -> list[str]:
@@ -289,6 +330,43 @@ class Style:
             raise ValueError("custom_colors 只有在 palette=\"custom\" 时才会被使用")
         if self.legend_frame:
             _hex_to_rgb(self.legend_edgecolor)
+        if not 0.1 <= float(self.line_width) <= 8.0:
+            raise ValueError(f"line_width 需在 0.1–8 pt 之间，当前 {self.line_width}")
+        if self.marker not in MARKERS:
+            raise ValueError(f"marker 需是 {'/'.join(MARKERS)} 之一，当前 {self.marker!r}")
+        if self.marker_fill not in MARKER_FILLS:
+            raise ValueError(f"marker_fill 需是 {'/'.join(MARKER_FILLS)} 之一")
+        for name in ("marker_size", "scatter_size"):
+            value = float(getattr(self, name))
+            if not 0.0 <= value <= 200.0:
+                raise ValueError(f"{name} 需在 0–200 之间，当前 {value}")
+        if not 0.0 <= float(self.marker_edge_width) <= 5.0:
+            raise ValueError(f"marker_edge_width 需在 0–5 之间，当前 {self.marker_edge_width}")
+        if self.marker_every is not None and int(self.marker_every) < 1:
+            raise ValueError(f"marker_every 需 ≥1（每几个点画一个标记），当前 {self.marker_every}")
+        for name in ("series_alpha", "scatter_alpha", "fill_alpha"):
+            if not 0.0 <= float(getattr(self, name)) <= 1.0:
+                raise ValueError(f"{name} 需在 0–1 之间，当前 {getattr(self, name)}")
+        if not 0.0 <= float(self.error_cap_size) <= 20.0:
+            raise ValueError(f"error_cap_size 需在 0–20 之间，当前 {self.error_cap_size}")
+        if self.error_line_width is not None and not 0.1 <= float(self.error_line_width) <= 8.0:
+            raise ValueError(f"error_line_width 需在 0.1–8 之间，当前 {self.error_line_width}")
+        if not 1 <= int(self.contour_levels) <= 100:
+            raise ValueError(f"contour_levels 需在 1–100 之间，当前 {self.contour_levels}")
+        if not 3 <= int(self.hexbin_gridsize) <= 200:
+            raise ValueError(f"hexbin_gridsize 需在 3–200 之间，当前 {self.hexbin_gridsize}")
+        if self.image_shading not in SHADINGS:
+            raise ValueError(f"image_shading 需是 {'/'.join(SHADINGS)} 之一")
+        if not 0.005 <= float(self.colorbar_thickness) <= 0.3:
+            raise ValueError(f"colorbar_thickness 需在 0.005–0.3 之间，当前 {self.colorbar_thickness}")
+        if not 0.0 <= float(self.colorbar_pad) <= 0.5:
+            raise ValueError(f"colorbar_pad 需在 0–0.5 之间，当前 {self.colorbar_pad}")
+        if int(self.rasterize_above) < 1:
+            raise ValueError(f"rasterize_above 需 ≥1，当前 {self.rasterize_above}")
+        if not -100 <= int(self.series_zorder) <= 100:
+            raise ValueError(f"series_zorder 需在 -100–100 之间，当前 {self.series_zorder}")
+        if not self.show_lines and not self.show_points:
+            raise ValueError("show_lines 与 show_points 不能同时关闭，否则系列不可见")
         return self
 
     def size_inches(self) -> tuple[float, float]:
@@ -421,6 +499,45 @@ class Style:
     def legend_kwargs(self) -> dict:
         """Artist-level legend arguments - the ones with no rcParam."""
         return {"ncols": int(self.legend_columns)}
+
+    def series_style(self, index: int = 0) -> dict:
+        """Per-series line and marker arguments for ax.plot().
+
+        Colour is deliberately not here - the renderer takes that from
+        `palette`, so cycling stays in one place.
+        """
+        kwargs = {
+            "linewidth": self.line_width if self.show_lines else 0.0,
+            "zorder": self.series_zorder,
+            "alpha": self.series_alpha,
+        }
+        if self.vary_line_style:
+            kwargs["linestyle"] = LINE_STYLES[index % len(LINE_STYLES)]
+        if self.marker != "none" or self.show_points:
+            marker = self.marker if self.marker != "none" else "o"
+            kwargs.update(
+                marker=marker,
+                markersize=self.marker_size,
+                # fillstyle, not markerfacecolor: "left"/"right"/"top"/"bottom"
+                # are fill styles and are not valid colours.
+                fillstyle=self.marker_fill,
+                markeredgecolor="auto",
+                markeredgewidth=self.marker_edge_width,
+            )
+            if self.marker_every is not None:
+                kwargs["markevery"] = int(self.marker_every)
+        if not self.show_lines:
+            kwargs["linestyle"] = "None"
+        return kwargs
+
+    def errorbar_kwargs(self) -> dict:
+        """Appearance only. Which axis carries the error stays the renderer's
+        call, since x- versus y-error is a data question, not a style one."""
+        return {
+            "capsize": self.error_cap_size,
+            "elinewidth": self.error_line_width or self.line_width,
+            "zorder": self.series_zorder,
+        }
 
     def configure_axes(self, ax, kind: str) -> None:
         """Per-Axes settings that rcParams cannot express: locators, formatters,
