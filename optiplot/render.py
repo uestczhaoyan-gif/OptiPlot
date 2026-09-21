@@ -102,6 +102,9 @@ def render(profile, rec, output=None, options=None, style=None):
                 if values.size and np.any(values <= 0):
                     raise ValueError("对数轴要求全部数据大于 0。")
                 getattr(ax, "set_" + axis + "scale")("log")
+        # After the log scales exist: the tick formatter needs to know a log axis
+        # is present so it does not print exponents as fixed decimals.
+        style.configure_axes(ax, rec.id)
         fig.optiplot_encodings = enc
         style.bake_into(fig)
         if output:

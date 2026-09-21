@@ -35,6 +35,15 @@ CJK_PRESETS = {
     "noto": ["Noto Sans SC"],
 }
 WEIGHTS = ("normal", "bold", "light")
+TICK_DIRECTIONS = ("in", "out", "inout")
+GRID_STATES = ("off", "major", "minor", "both")
+# Types whose axes are a real numeric frame and can be re-styled as a line plot
+# can. Everything else draws an image, a diagram or a polar frame, where grid
+# lines, tick locators and a numeric xlim are either meaningless or wrong - and
+# for a heatmap, cropping the axis would silently crop measured data.
+AXIS_STYLED = frozenset(
+    {"spectrum_lines", "scatter_fit", "density", "errorbar", "distribution", "box"}
+)
 # Journal column widths. `preview` is the on-screen default.
 SIZES = {"preview": (7.2, 4.7), "single": (3.5, 2.65), "double": (7.2, 4.6), "slide": (10, 5.625)}
 # A single-column figure has to carry smaller text at the same physical size,
@@ -104,6 +113,34 @@ class Style:
     tick_pad: float = 4.0
     # B canvas (started; margins and aspect follow)
     size: str = "preview"
+    # C axes
+    spines: str = "left+bottom"
+    spine_width: float = 0.7
+    spine_color: str = "#333333"
+    tick_direction: str = "out"
+    tick_length: float = 3.5
+    tick_minor_length: float = 2.0
+    tick_width: float = 0.7
+    tick_minor: bool = False
+    tick_rotation: float = 0.0
+    tick_max: int | None = None
+    tick_precision: int | None = None
+    sci_power: int | None = None
+    use_offset: bool = True
+    axis_margin: float = 0.05
+    grid: str = "off"
+    grid_style: str = ":"
+    grid_width: float = 0.6
+    grid_color: str = "#9E9E9E"
+    grid_alpha: float = 0.7
+    grid_under_data: bool = True
+    x_min: float | None = None
+    x_max: float | None = None
+    y_min: float | None = None
+    y_max: float | None = None
+    x_reverse: bool = False
+    y_reverse: bool = False
+    y_zero_centered: bool = False
 
     # ------------------------------------------------------------------
     def validate(self) -> "Style":
@@ -132,6 +169,36 @@ class Style:
                 raise ValueError(f"{name} 需在 0–40 pt 之间，当前 {value}")
         if self.size not in SIZES:
             raise ValueError(f"尺寸预设需是 {'/'.join(SIZES)} 之一，当前 {self.size!r}")
+        if self.tick_direction not in TICK_DIRECTIONS:
+            raise ValueError(f"tick_direction 需是 {'/'.join(TICK_DIRECTIONS)} 之一")
+        if self.grid not in GRID_STATES:
+            raise ValueError(f"grid 需是 {'/'.join(GRID_STATES)} 之一，当前 {self.grid!r}")
+        for name in ("spine_width", "tick_width", "grid_width"):
+            value = getattr(self, name)
+            if not 0.0 <= float(value) <= 5.0:
+                raise ValueError(f"{name} 需在 0–5 pt 之间，当前 {value}")
+        for name in ("tick_length", "tick_minor_length"):
+            value = getattr(self, name)
+            if not 0.0 <= float(value) <= 25.0:
+                raise ValueError(f"{name} 需在 0–25 pt 之间，当前 {value}")
+        if not -90.0 <= self.tick_rotation <= 90.0:
+            raise ValueError(f"tick_rotation 需在 -90 到 90 度之间，当前 {self.tick_rotation}")
+        if self.tick_max is not None and not 2 <= int(self.tick_max) <= 40:
+            raise ValueError(f"tick_max 需在 2–40 之间，当前 {self.tick_max}")
+        if self.tick_precision is not None and not 0 <= int(self.tick_precision) <= 10:
+            raise ValueError(f"tick_precision 需在 0–10 位之间，当前 {self.tick_precision}")
+        if self.sci_power is not None and not -8 <= int(self.sci_power) <= 8:
+            raise ValueError(f"sci_power 需在 -8 到 8 之间，当前 {self.sci_power}")
+        if not 0.0 <= self.axis_margin <= 0.5:
+            raise ValueError(f"axis_margin 需在 0–0.5 之间，当前 {self.axis_margin}")
+        if not 0.0 <= float(self.grid_alpha) <= 1.0:
+            raise ValueError(f"grid_alpha 需在 0–1 之间，当前 {self.grid_alpha}")
+        for axis, low, high in (("x", self.x_min, self.x_max), ("y", self.y_min, self.y_max)):
+            if low is not None and high is not None and float(low) >= float(high):
+                raise ValueError(f"{axis} 轴下限必须小于上限（{low} ≥ {high}）")
+        if self.y_zero_centered and self.y_min is not None and self.y_max is not None:
+            raise ValueError("y_zero_centered 与手动 y 范围冲突，请只设一个")
+        self.spines_visible()
         return self
 
     def size_inches(self) -> tuple[float, float]:
@@ -161,9 +228,24 @@ class Style:
         ordered = list(dict.fromkeys([*cjk, *latin, "DejaVu Sans"]))
         return _resolve(ordered, installed)
 
+    def spines_visible(self) -> frozenset[str]:
+        """"all", "none", or a "+"-joined set such as "left+bottom+top"."""
+        spec = self.spines.strip().lower()
+        if spec in ("all", "both"):
+            return frozenset({"left", "right", "top", "bottom"})
+        if spec in ("none", ""):
+            return frozenset()
+        wanted = {part.strip() for part in spec.split("+")}
+        unknown = wanted - {"left", "right", "top", "bottom"}
+        if unknown:
+            raise ValueError(f"未知脊线名：{', '.join(sorted(unknown))}")
+        return frozenset(wanted)
+
     def rc_params(self) -> dict:
         """Everything Matplotlib inherits while the figure is drawn."""
         base = self.resolved_font_size()
+        spine_set = self.spines_visible()
+        direction = {"inout": "inout"}.get(self.tick_direction, self.tick_direction)
         return {
             "font.family": "sans-serif",
             "font.sans-serif": self.font_stack(),
@@ -179,11 +261,23 @@ class Style:
             "axes.labelpad": self.label_pad,
             "xtick.major.pad": self.tick_pad,
             "ytick.major.pad": self.tick_pad,
-            # Carried over from the pre-plumbing renderer so nothing regresses.
-            # Group C (axes) turns these into fields; until then they are fixed.
-            "axes.spines.top": False,
-            "axes.spines.right": False,
-            "axes.linewidth": 0.7,
+            "axes.spines.top": "top" in spine_set,
+            "axes.spines.right": "right" in spine_set,
+            "axes.spines.left": "left" in spine_set,
+            "axes.spines.bottom": "bottom" in spine_set,
+            "axes.linewidth": self.spine_width,
+            "axes.edgecolor": self.spine_color,
+            "xtick.direction": direction,
+            "ytick.direction": direction,
+            "xtick.major.size": self.tick_length,
+            "ytick.major.size": self.tick_length,
+            "xtick.minor.size": self.tick_minor_length,
+            "ytick.minor.size": self.tick_minor_length,
+            "xtick.major.width": self.tick_width,
+            "ytick.major.width": self.tick_width,
+            "xtick.minor.visible": self.tick_minor,
+            "ytick.minor.visible": self.tick_minor,
+            "axes.axisbelow": self.grid_under_data,
             "savefig.facecolor": "white",
             # Vector text stays editable in Illustrator unless the caller asks
             # for paths; both matter for journal submission.
@@ -220,6 +314,65 @@ class Style:
             if text.get_text():
                 text.set_fontfamily(stack)
         return self
+
+    def configure_axes(self, ax, kind: str) -> None:
+        """Per-Axes settings that rcParams cannot express: locators, formatters,
+        limits and grid state.
+
+        Only AXIS_STYLED types are touched. A heatmap's axis range is measured
+        data, so cropping it would hide samples while looking like a cosmetic
+        choice, and grid lines over a pcolormesh are noise.
+        """
+        if kind not in AXIS_STYLED:
+            return
+        from matplotlib.ticker import FuncFormatter, MaxNLocator
+
+        ax.tick_params(axis="both", which="both", labelrotation=self.tick_rotation)
+
+        if self.grid != "off":
+            major = self.grid in ("major", "both")
+            minor = self.grid in ("minor", "both")
+            common = {
+                "linestyle": self.grid_style,
+                "linewidth": self.grid_width,
+                "color": self.grid_color,
+                "alpha": self.grid_alpha,
+            }
+            ax.grid(major, which="major", **common)
+            if minor:
+                ax.grid(True, which="minor", **common)
+
+        if self.tick_max is not None:
+            for axis in (ax.xaxis, ax.yaxis):
+                axis.set_major_locator(MaxNLocator(nbins=int(self.tick_max), prune="upper"))
+        if self.tick_precision is not None:
+            # A fixed-decimal formatter would print 1e3 as "1000.000" on a log
+            # axis, where the tick values are exponents - leave those alone.
+            for axis, scale in ((ax.xaxis, ax.get_xscale()), (ax.yaxis, ax.get_yscale())):
+                if scale == "log":
+                    continue
+                axis.set_major_formatter(
+                    FuncFormatter(lambda v, _: f"{v:.{int(self.tick_precision)}f}")
+                )
+        if self.sci_power is not None:
+            power = int(self.sci_power)
+            ax.ticklabel_format(style="sci", scilimits=(power, power), useOffset=self.use_offset)
+        elif not self.use_offset:
+            ax.ticklabel_format(useOffset=False)
+
+        ax.margins(self.axis_margin)
+        if self.x_min is not None or self.x_max is not None:
+            ax.set_xlim(left=self.x_min, right=self.x_max)
+        if self.y_min is not None or self.y_max is not None:
+            ax.set_ylim(bottom=self.y_min, top=self.y_max)
+        elif self.y_zero_centered:
+            top, bottom = ax.get_ylim()
+            reach = max(abs(top), abs(bottom))
+            ax.set_ylim(-reach, reach)
+        if self.x_reverse:
+            ax.invert_xaxis()
+        if self.y_reverse:
+            ax.invert_yaxis()
 
     def to_dict(self) -> dict:
         return asdict(self)

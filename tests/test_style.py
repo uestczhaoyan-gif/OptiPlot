@@ -204,6 +204,190 @@ def test_colourbar_scale_is_applied_at_artist_level():
 # ── validation at the boundary ──────────────────────────────────────
 
 
+# ── C axes: spines, ticks, grid, limits ────────────────────────────
+
+
+def spine(ax, name):
+    return {"top": ax.spines["top"], "right": ax.spines["right"],
+            "left": ax.spines["left"], "bottom": ax.spines["bottom"]}[name]
+
+
+def test_default_hides_top_and_right_spines():
+    ax = drawn()[1]
+    assert not spine(ax, "top").get_visible()
+    assert not spine(ax, "right").get_visible()
+    assert spine(ax, "left").get_visible() and spine(ax, "bottom").get_visible()
+
+
+def test_spines_all_shows_four():
+    ax = drawn({"spines": "all"})[1]
+    assert all(spine(ax, s).get_visible() for s in ("top", "right", "left", "bottom"))
+
+
+def test_spine_width_and_colour_reach_the_artists():
+    ax = drawn({"spines": "all", "spine_width": 2.5, "spine_color": "#FF0000"})[1]
+    assert spine(ax, "top").get_linewidth() == 2.5
+    assert spine(ax, "top").get_edgecolor()[:3] == (1.0, 0.0, 0.0)
+
+
+def test_tick_direction_reaches_the_context():
+    """Matplotlib exposes no public reader for a tick's direction, so the
+    end-to-end proof is the pixel test below."""
+    for direction in ("in", "out", "inout"):
+        assert Style(tick_direction=direction).rc_params()["xtick.direction"] == direction
+
+
+def test_axis_knobs_change_the_rendered_pixels():
+    """The rcParam dict is not the contract - the picture is. `font.family` once
+    passed every metadata assertion while producing byte-identical figures, so
+    each knob that Matplotlib reads lazily has to be proven here."""
+    import hashlib
+
+    def digest(**kw):
+        fig = render(profile(), recommend(profile())[0], style=Style(**kw))
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=110)
+        fig.clear()
+        return hashlib.sha256(buf.getvalue()).hexdigest()
+
+    base = digest()
+    for kw in (
+        {"tick_direction": "in"},
+        {"tick_length": 12.0},
+        {"grid": "major"},
+        {"spines": "all"},
+        {"tick_minor": True},
+        {"tick_max": 3},
+        {"tick_precision": 1},
+        {"sci_power": 3},
+        {"y_zero_centered": True},
+        {"x_reverse": True},
+    ):
+        assert digest(**kw) != base, f"{kw} changed nothing"
+
+
+def test_minor_ticks_can_be_switched_on():
+    assert len(drawn({"tick_minor": False})[1].xaxis.get_minor_ticks()) == 0
+    assert len(drawn({"tick_minor": True})[1].xaxis.get_minor_ticks()) > 0
+
+
+def test_tick_rotation_reaches_the_labels():
+    ax = drawn({"tick_rotation": 45})[1]
+    assert {round(t.get_rotation()) for t in ax.get_xticklabels()} == {45}
+
+
+def test_tick_max_limits_the_number_of_ticks():
+    many = len(drawn({"tick_max": 3})[1].get_xticks())
+    assert many <= 4  # MaxNLocator prunes the upper edge
+
+
+def test_tick_precision_formats_the_labels():
+    ax = drawn({"tick_precision": 2})[1]
+    labels = [t.get_text() for t in ax.get_xticklabels() if t.get_text()]
+    assert labels and all(len(v.split(".")[1]) == 2 for v in labels if "." in v)
+
+
+def test_sci_power_moves_the_exponent_into_the_offset_text():
+    """Large wavelengths would otherwise print as 1200, 1400… Matplotlib puts the
+    exponent in the axis offset text, not in each label."""
+    plain = drawn()[1].xaxis.get_offset_text().get_text()
+    sci = drawn({"sci_power": 3})[1].xaxis.get_offset_text().get_text()
+    assert plain == ""
+    assert sci.replace("−", "-") in {"$10^{3}$", "1e3", "$\\mathdefault{10^{3}}$"}
+
+
+def test_grid_off_by_default_and_switchable():
+    def visible(option):
+        ax = drawn(option)[1]
+        return any(line.get_visible() for line in ax.xaxis.get_gridlines())
+
+    assert visible({"grid": "off"}) is False
+    assert visible({"grid": "major"}) is True
+    assert visible({"grid": "both"}) is True
+
+
+def test_grid_colour_and_style_reach_the_lines():
+    ax = drawn({"grid": "major", "grid_style": "-.", "grid_color": "#00FF00",
+                "grid_width": 1.5, "grid_alpha": 0.25})[1]
+    line = next(l for l in ax.xaxis.get_gridlines() if l.get_visible())
+    assert line.get_linestyle() == "-."
+    assert line.get_linewidth() == 1.5
+    assert line.get_alpha() == 0.25
+
+
+def test_grid_under_data_maps_to_axisbelow():
+    assert drawn({"grid_under_data": True})[1].get_axisbelow() is True
+    assert drawn({"grid_under_data": False})[1].get_axisbelow() is False
+
+
+def test_axis_margin_widens_the_autoscaled_range():
+    tight = drawn({"axis_margin": 0.0})[1].get_xlim()
+    loose = drawn({"axis_margin": 0.3})[1].get_xlim()
+    assert (loose[1] - loose[0]) > (tight[1] - tight[0])
+
+
+def test_explicit_limits_win():
+    ax = drawn({"x_min": 1300, "x_max": 1600})[1]
+    assert ax.get_xlim() == (1300.0, 1600.0)
+
+
+def test_y_zero_centered_makes_the_range_symmetric():
+    ax = drawn({"y_zero_centered": True})[1]
+    bottom, top = ax.get_ylim()
+    assert bottom == pytest.approx(-top)
+
+
+def test_reversed_axes():
+    ax = drawn({"x_reverse": True})[1]
+    assert ax.get_xlim()[0] > ax.get_xlim()[1]
+
+
+def test_image_and_diagram_types_keep_their_data_and_stay_ungridded():
+    """Two things are genuinely wrong on an image-type figure: grid lines over a
+    pcolormesh are noise, and cropping a heatmap axis hides measured samples
+    while looking like a cosmetic choice. Spines and tick direction stay
+    available - four-sided frames on a beam map are common and harmless."""
+    grid = pd.DataFrame(
+        {
+            "x_um": np.tile(np.arange(20, dtype=float), 20),
+            "y_um": np.repeat(np.arange(20, dtype=float), 20),
+            "intensity_au": np.random.default_rng(6).normal(size=400),
+        }
+    )
+    p = analyze_dataframe(grid)
+    rec = next(r for r in recommend(p) if r.id == "heatmap")
+    ax = render(p, rec, style=Style(grid="both", x_min=5.0, x_max=10.0)).axes[0]
+    assert not any(l.get_visible() for l in ax.xaxis.get_gridlines())
+    assert ax.get_xlim() != (5.0, 10.0), "heatmap axis range must not be cropped"
+    # ...while the same style still frames it normally
+    assert not spine(ax, "top").get_visible()
+    framed = render(p, rec, style=Style(spines="all")).axes[0]
+    assert spine(framed, "top").get_visible()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"spines": "diagonal"},
+        {"tick_direction": "sideways"},
+        {"grid": "sometimes"},
+        {"grid_alpha": 4},
+        {"axis_margin": 2.0},
+        {"tick_rotation": 180},
+        {"tick_max": 1},
+        {"tick_precision": 99},
+        {"sci_power": 40},
+        {"spine_width": 90},
+        {"x_min": 5, "x_max": 5},
+        {"y_min": 1, "y_max": 0},
+        {"y_zero_centered": True, "y_min": 0, "y_max": 1},
+    ],
+)
+def test_bad_axis_values_are_rejected(bad):
+    with pytest.raises(ValueError):
+        Style(**bad).validate()
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -217,7 +401,7 @@ def test_colourbar_scale_is_applied_at_artist_level():
         {"title_weight": "heavy"},
     ],
 )
-def test_bad_values_are_rejected(bad):
+def test_bad_typography_values_are_rejected(bad):
     with pytest.raises(ValueError):
         Style(**bad).validate()
 
