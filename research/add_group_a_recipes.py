@@ -13,6 +13,28 @@ styles_path = here / "catalog" / "styles.json"
 styles = json.loads(styles_path.read_text(encoding="utf-8"))
 
 NEW = [
+    # --- stacked_curves (parameter-resolved families, drawn as an offset stack) ---
+    ("stacked_curves", "变角度透射堆叠",
+     "theta_deg, wavelength_nm, transmittance",
+     "每个角度一条曲线，按固定偏移逐条上移，用于显示峰形随角度的移动而非绝对值；"
+     "须在图注或纵轴写明偏移量，否则读者会把堆叠高度误读为强度大小。"),
+    ("stacked_curves", "泵浦延迟时间分辨差分谱",
+     "delay_ps, wavelength_nm, differential_signal",
+     "按延迟序列堆叠差分透过率变化；正负信号同框时须保留零线，"
+     "若曲线被偏移抬高，改用二维热图显示符号更诚实。"),
+    ("stacked_curves", "温漂发光谱序列",
+     "temperature_K, wavelength_nm, electroluminescence",
+     "温度序列堆叠用于同时展示峰位红移与强度淬灭；每条曲线须按同一偏移量抬升，"
+     "不要为美观而单独缩放某一条，否则温升趋势会被读成噪声。"),
+    # --- spectrum_lines: the stepped variant ---
+    ("spectrum_lines", "步进波长的阶梯读数",
+     "wavelength_nm, power_reading",
+     "单色仪逐点步进采集时，读数在两个波长之间并未连续变化，用阶梯线（step）"
+     "而不是直连，否则会把设定值之间不存在的过程连线成测量结果。"),
+    ("spectrum_lines", "参数分辨曲线族",
+     "temperature_K, wavelength_nm, transmittance",
+     "同一器件在多个温度下的透射谱叠在一张图上；曲线数超过调色板容量时改用连续色带"
+     "按温度排序着色，否则两条不同温度的曲线会共用同一颜色而被读成重复测量。"),
     # --- dual_axis ---
     ("dual_axis", "透反射同框",
      "wavelength_nm, T_percent, R_percent",
@@ -86,8 +108,12 @@ NEW = [
 ]
 
 existing = {(s["label"], s["recipe"]) for s in styles}
-by_prefix = {p: sum(1 for s in styles if s["id"].startswith(p + "-")) for p in
-             {"spectral_difference", "spectral_ratio", "spectral_envelope", "energy_axis"}}
+# numbered from however many recipes each pattern already owns, so re-running this
+# script after adding a pattern appends instead of colliding with spectrum_lines-01
+by_prefix = {
+    p: sum(1 for s in styles if s["patterns"][0] == p)
+    for p in {s["patterns"][0] for s in styles}
+}
 
 added = 0
 for pattern, label, schema, recipe in NEW:

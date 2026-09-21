@@ -178,6 +178,28 @@ def _distinct_quantity(a: str, b: str) -> bool:
     return all(_axis_rank(c) not in (2, 5) for c in (a, b))
 
 
+def _parameter_group(data, x, candidates, n_rows: int) -> str | None:
+    """A second scan axis whose values index repeated blocks of the first one.
+
+    Instrument exports store the angle, temperature or delay step as a number, so
+    no column reads as categorical and the curve family collapses into one
+    zigzag. The uniqueness test is what separates "fifteen spectra at fifteen
+    angles" from "the same point measured fifteen times" -- and replicates need
+    error bars, not a family of lines.
+    """
+    best = None
+    for c in candidates:
+        levels = data[c].dropna().nunique()
+        if not 2 <= levels <= 24 or levels * 4 > n_rows:
+            continue
+        pairs = data[[x, c]].dropna()
+        if pairs.empty or pairs.duplicated().any():
+            continue
+        if best is None or levels < best[1]:
+            best = (c, levels)
+    return best[0] if best else None
+
+
 def _has_interior_extremum(values) -> bool:
     """Whether a curve turns around inside its own range rather than running
     monotonically to an edge. A peak that sits on the boundary is a truncated
@@ -565,6 +587,11 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
     ]
 
     def add(identifier, title, tier, reason, encodings, rank):
+        grouped_by = encodings.get("group")
+        if grouped_by:
+            # Grouping is inferred from the column structure, so the figure has to
+            # name what it grouped by rather than leave it to the legend title.
+            reason += f"；按 {grouped_by} 的 {data[grouped_by].dropna().nunique()} 个取值分组"
         out.append(Recommendation(identifier, title, tier, reason, encodings, rank))
 
     def by_tier(items):
@@ -602,7 +629,11 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         (c for c in p.categorical_columns if 2 <= data[c].nunique() <= min(12, p.n_rows // 2)), None
     )
     x = next((c for c in p.axis_columns if c in eligible), eligible[0] if eligible else None)
-    responses = [c for c in eligible if c != x and c not in p.angle_columns]
+    if x and group is None:
+        group = _parameter_group(
+            data, x, [c for c in p.axis_columns if c != x], p.n_rows
+        )
+    responses = [c for c in eligible if c != x and c != group and c not in p.angle_columns]
     y = responses[0] if responses else None
     if p.matrix_like and p.n_rows >= 2 and len(p.numeric_columns) >= 2:
         add(
@@ -645,7 +676,9 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             and (data[radius].dropna() >= 0).all()
         ):
             enc = {"theta": theta, "r": radius, "angle_unit": p.angle_units.get(theta, "deg")}
-            if group:
+            # Grouping a polar plot by its own angle leaves one radius per group,
+            # which is a scatter of dots with a legend, not a comparison.
+            if group and group != theta:
                 enc["group"] = group
             add(
                 "polar",
@@ -683,11 +716,14 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         line_ys = [c for c in responses if _valid_count(data, [x, c]) >= 3]
         keys = [x] + ([group] if group else [])
         line_unique = not data[keys].dropna().duplicated(keys).any()
+        # A complete grid disqualifies one line, because joining the raster order
+        # zigzags across the map. Once a second scan axis names the groups, each
+        # group is its own ordered sweep and the family is the honest view.
         if (
             line_ys
             and p.n_rows >= 4
-            and not p.grid_like
             and line_unique
+            and (not p.grid_like or group)
             and (_axis_rank(x) < 99 or _ordered(data[x]))
         ):
             enc = {"x": x, "y": line_ys[:8]}
@@ -701,6 +737,19 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 enc,
                 6,
             )
+            # The same family stacked instead of overlaid. Offered only for one
+            # response: eight columns times fifteen angles is a wall, not a plot.
+            if group and len(line_ys) >= 1 and 2 <= data[group].dropna().nunique() <= 20:
+                add(
+                    "stacked_curves",
+                    "堆叠曲线族",
+                    "high",
+                    f"把 {group} 的每条曲线按固定偏移逐条上移，重叠区不再互相遮挡，"
+                    "适合看峰形随参数的移动；每条曲线的基线只是排版偏移，"
+                    "不是物理零点，纵坐标绝对值只能在本条曲线内部解读",
+                    {"x": x, "y": line_ys[:1], "group": group},
+                    7,
+                )
 
         # --- derived comparisons between response columns on the same scan grid.
         # All of these require the columns to share x values row by row; nothing
@@ -872,7 +921,7 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                     "box",
                     "分组箱线图与原始点",
                     "high",
-                    "分类列中至少两组有重复数值观测，可比较中位数、四分位与原始点",
+                    "至少两组有重复数值观测，可比较中位数、四分位与原始点",
                     {"group": group, "value": value},
                     7,
                 )

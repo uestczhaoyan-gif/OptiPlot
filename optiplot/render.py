@@ -20,6 +20,7 @@ COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 # reference these ids.
 FIGURE_TYPES = (
     "spectrum_lines",
+    "stacked_curves",
     "spectral_difference",
     "spectral_ratio",
     "spectral_envelope",
@@ -102,6 +103,21 @@ def _colorbar(fig, m, ax, label, style):
     cb.outline.set_linewidth(0.7)
     cb.ax.yaxis.label.set_fontsize(style.resolved_font_size() * style.colorbar_scale)
     return cb
+
+
+def _group_colours(style, n: int) -> list:
+    """Cycle the palette while it covers the series; past that, sample the figure
+    colour map evenly.
+
+    Reusing a colour inside a parameter family is worse than a slightly less
+    distinct gradient: fifteen angles of one coating are neither one curve nor a
+    repeated measurement, and two curves drawn in the same blue read as either.
+    """
+    palette = style.colors
+    if n <= len(palette):
+        return [palette[i % len(palette)] for i in range(n)]
+    cmap = matplotlib.colormaps[style.cmap if style.cmap != "auto" else "viridis"]
+    return [cmap(x) for x in np.linspace(0.05, 0.95, n)]
 
 
 def _peak_and_fwhm(wave, value):
@@ -220,6 +236,11 @@ def render(profile, rec, output=None, options=None, style=None):
         # After the log scales exist: the tick formatter needs to know a log axis
         # is present so it does not print exponents as fixed decimals.
         style.configure_axes(ax, rec.id)
+        for child in fig.axes:
+            if child is not ax:
+                # A twin shares the frame, so it takes the same tick and limit
+                # treatment; gridding it would print a second set of lines.
+                style.configure_axes(child, rec.id, grid=False)
         style.apply_margins(fig)
         fig.optiplot_encodings = enc
         style.bake_into(fig)
@@ -242,12 +263,12 @@ def _draw(ax, fig, df, kind, e, opts, style):
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
         group = e["group"]
         sub_enc = {k: v for k, v in e.items() if k != "group"}
-        for i, (name, subset) in enumerate(
-            df.dropna(subset=[group]).groupby(group, sort=False, observed=True)
-        ):
+        levels = list(df.dropna(subset=[group]).groupby(group, sort=False, observed=True))
+        colours = _group_colours(style, len(levels))
+        for i, (name, subset) in enumerate(levels):
             before_lines, before_cols = len(ax.lines), len(ax.collections)
             _draw(ax, fig, subset, kind, sub_enc, opts, style)
-            color = palette[i % len(palette)]
+            color = colours[i]
             for line in ax.lines[before_lines:]:
                 line.set_color(color)
                 line.set_label("_nolegend_")
@@ -282,6 +303,46 @@ def _draw(ax, fig, df, kind, e, opts, style):
         ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
         if len(ys) > 1:
             _legend(ax, style)
+    elif kind == "stacked_curves":
+        xname, group = e["x"], e["group"]
+        yname = (e["y"] if isinstance(e["y"], list) else [e["y"]])[0]
+        rows = (
+            df[[xname, yname, group]]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
+        levels = list(dict.fromkeys(rows[group].to_numpy()))
+        if not 2 <= len(levels) <= 20:
+            raise ValueError("堆叠曲线需要 2–20 个分组取值，再多就只是把图拉长。")
+        curves = [rows[rows[group] == level] for level in levels]
+        # One shared span, not each curve's own: the offsets then stay comparable,
+        # so a taller bump really is a taller bump rather than a flatter sample.
+        span = max((float(c[yname].max() - c[yname].min()) for c in curves), default=0.0)
+        if not np.isfinite(span) or span <= 0:
+            span = float(rows[yname].max() - rows[yname].min()) or 1.0
+        colours = _group_colours(style, len(levels))
+        for i, (level, curve, colour) in enumerate(zip(levels, curves, colours)):
+            lift = i * float(style.stack_offset) * span
+            ax.plot(
+                curve[xname],
+                curve[yname] + lift,
+                color=colour,
+                drawstyle="steps-mid" if style.step else "default",
+                label=str(level),
+                **style.series_style(0),
+            )
+            if style.stack_fill:
+                ax.fill_between(
+                    curve[xname],
+                    lift,
+                    curve[yname] + lift,
+                    color=colour,
+                    alpha=style.fill_alpha,
+                    lw=0,
+                )
+        ax.set(xlabel=xname, ylabel=f"{yname}（按 {group} 逐条上移）")
+        _legend(ax, style, title=group)
     elif kind in ["spectral_difference", "spectral_ratio"]:
         d, xname, a, b = _spectral_pair(df, e)
         if kind == "spectral_difference":

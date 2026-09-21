@@ -240,6 +240,39 @@ class RecommenderTestCase(unittest.TestCase):
         self.assertFalse(_distinct_quantity("device_A", "device_B"))
         self.assertFalse(_distinct_quantity("x_um", "intensity_au"))
 
+    def test_a_numeric_scan_parameter_becomes_a_curve_family(self):
+        """Angle, temperature and delay steps are exported as numbers, so nothing
+        reads as categorical and the spectra would otherwise zigzag into one line."""
+        wave = np.tile(np.linspace(1200.0, 1400.0, 20), 8)
+        temp = np.repeat(np.arange(20.0, 100.0, 10.0), 20)
+        p, recs = self.suggestions(
+            {"wavelength_nm": wave, "stage_temperature_C": temp, "transmission": np.sin(wave / 40)}
+        )
+        self.assertEqual(recs["spectrum_lines"].encodings["group"], "stage_temperature_C")
+        self.assertIn("stage_temperature_C", recs["spectrum_lines"].reason)
+
+    def test_replicates_at_one_coordinate_are_not_a_curve_family(self):
+        """Repeated rows sharing the same x are a spread to put error bars on; the
+        (x, candidate) uniqueness test is what tells the two shapes apart."""
+        p, recs = self.suggestions(
+            {
+                "wavelength_nm": np.repeat(np.linspace(1200.0, 1400.0, 20), 4),
+                "transmission": np.tile([0.5, 0.52, 0.49, 0.51], 20),
+            }
+        )
+        self.assertIn("errorbar", recs)
+        self.assertTrue(all("group" not in r.encodings for r in recs.values()))
+
+    def test_a_polar_plot_is_not_grouped_by_its_own_angle(self):
+        p, recs = self.suggestions(
+            {
+                "theta_deg": np.repeat(np.arange(0.0, 360.0, 30.0), 3),
+                "radius_mm": np.tile([1.0, 2.0, 3.0], 12),
+                "channel": np.tile(["a", "b", "c"], 12),
+            }
+        )
+        self.assertNotEqual(recs["polar"].encodings.get("group"), "theta_deg")
+
 
 class FileInputTestCase(unittest.TestCase):
     def test_delimited_encodings_and_no_header_preserve_first_observation(self):

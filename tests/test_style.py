@@ -357,6 +357,39 @@ def test_grid_under_data_maps_to_axisbelow():
     assert drawn({"grid_under_data": False})[1].get_axisbelow() is False
 
 
+# Types that draw an image, a diagram or a polar frame: grid lines, tick locators
+# and a numeric xlim are meaningless or actively wrong on them.
+AXES_LEFT_ALONE = {
+    "heatmap",
+    "contour",
+    "matrix_heatmap",
+    "polar",
+    "correlation",
+    "flow",
+    "table",
+}
+
+
+def test_every_figure_type_is_styled_or_declared_exempt():
+    """A line type missing from AXIS_STYLED ignores grid, tick_max and the range
+    knobs, and no test written against the older types would ever notice."""
+    from optiplot.render import FIGURE_TYPES
+    from optiplot.style import AXIS_STYLED
+
+    assert set(FIGURE_TYPES) == set(AXIS_STYLED) | AXES_LEFT_ALONE
+    assert not set(AXIS_STYLED) & AXES_LEFT_ALONE
+
+
+def test_axis_styling_reaches_a_new_line_type_and_its_twin():
+    p = analyze_file(ROOT / "examples" / "sample_liv_sweep.csv")
+    rec = next(r for r in recommend(p) if r.id == "dual_axis")
+    fig = render(p, rec, style=Style(grid="major", tick_max=3)).figure
+    ax, twin = fig.axes[0], fig.axes[1]
+    assert any(l.get_visible() for l in ax.yaxis.get_gridlines())
+    assert not any(l.get_visible() for l in twin.yaxis.get_gridlines()), "twin grids twice"
+    assert len(twin.get_yticks()) <= 4, "tick_max never reached the twin axis"
+
+
 def test_axis_margin_widens_the_autoscaled_range():
     tight = drawn({"axis_margin": 0.0})[1].get_xlim()
     loose = drawn({"axis_margin": 0.3})[1].get_xlim()
@@ -700,6 +733,8 @@ def test_every_offered_marker_and_fillstyle_survives_a_real_draw():
         {"colorbar_pad": 5},
         {"rasterize_above": 0},
         {"series_zorder": 9999},
+        {"stack_offset": 0.05},
+        {"stack_offset": 40},
         {"show_lines": False, "show_points": False},
     ],
 )

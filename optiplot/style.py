@@ -44,7 +44,22 @@ GRID_STATES = ("off", "major", "minor", "both")
 # lines, tick locators and a numeric xlim are either meaningless or wrong - and
 # for a heatmap, cropping the axis would silently crop measured data.
 AXIS_STYLED = frozenset(
-    {"spectrum_lines", "scatter_fit", "density", "errorbar", "distribution", "box"}
+    {
+        "spectrum_lines",
+        "stacked_curves",
+        "spectral_difference",
+        "spectral_ratio",
+        "spectral_envelope",
+        "spectral_derivative",
+        "energy_axis",
+        "dual_axis",
+        "peak_evolution",
+        "scatter_fit",
+        "density",
+        "errorbar",
+        "distribution",
+        "box",
+    }
 )
 # Journal column widths. `preview` is the on-screen default.
 SIZES = {"preview": (7.2, 4.7), "single": (3.5, 2.65), "double": (7.2, 4.6), "slide": (10, 5.625)}
@@ -264,6 +279,8 @@ class Style:
     marker_edge_width: float = 0.8
     marker_every: int | None = None
     step: bool = False
+    stack_offset: float = 1.4
+    stack_fill: bool = True
     show_lines: bool = True
     show_points: bool = False
     series_alpha: float = 1.0
@@ -400,6 +417,10 @@ class Style:
             raise ValueError(f"marker_edge_width 需在 0–5 之间，当前 {self.marker_edge_width}")
         if self.marker_every is not None and int(self.marker_every) < 1:
             raise ValueError(f"marker_every 需 ≥1（每几个点画一个标记），当前 {self.marker_every}")
+        if not 0.2 <= float(self.stack_offset) <= 6.0:
+            raise ValueError(
+                f"stack_offset 需在 0.2–6 倍曲线自身量程之间，当前 {self.stack_offset}"
+            )
         for name in ("series_alpha", "scatter_alpha", "fill_alpha"):
             if not 0.0 <= float(getattr(self, name)) <= 1.0:
                 raise ValueError(f"{name} 需在 0–1 之间，当前 {getattr(self, name)}")
@@ -688,13 +709,14 @@ class Style:
         for ax in fig.axes:
             ax.set_position([left, bottom, max(right - left, 0.05), max(top - bottom, 0.05)])
 
-    def configure_axes(self, ax, kind: str) -> None:
+    def configure_axes(self, ax, kind: str, grid: bool = True) -> None:
         """Per-Axes settings that rcParams cannot express: locators, formatters,
         limits and grid state.
 
         Only AXIS_STYLED types are touched. A heatmap's axis range is measured
         data, so cropping it would hide samples while looking like a cosmetic
-        choice, and grid lines over a pcolormesh are noise.
+        choice, and grid lines over a pcolormesh are noise. `grid=False` is for a
+        twin axis, whose own horizontal lines would print over the first set.
         """
         if kind not in AXIS_STYLED:
             return
@@ -702,7 +724,7 @@ class Style:
 
         ax.tick_params(axis="both", which="both", labelrotation=self.tick_rotation)
 
-        if self.grid != "off":
+        if self.grid != "off" and grid:
             major = self.grid in ("major", "both")
             minor = self.grid in ("minor", "both")
             common = {

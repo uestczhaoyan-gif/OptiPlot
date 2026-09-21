@@ -1111,6 +1111,51 @@
   "recipe": "按回归和分类任务分组，成功定义在图注写明；离散参数用点线。"
  },
  {
+  "id": "spectrum_lines-42",
+  "label": "步进波长的阶梯读数",
+  "patterns": [
+   "spectrum_lines"
+  ],
+  "data_schema": "wavelength_nm, power_reading",
+  "recipe": "单色仪逐点步进采集时，读数在两个波长之间并未连续变化，用阶梯线（step）而不是直连，否则会把设定值之间不存在的过程连线成测量结果。"
+ },
+ {
+  "id": "spectrum_lines-43",
+  "label": "参数分辨曲线族",
+  "patterns": [
+   "spectrum_lines"
+  ],
+  "data_schema": "temperature_K, wavelength_nm, transmittance",
+  "recipe": "同一器件在多个温度下的透射谱叠在一张图上；曲线数超过调色板容量时改用连续色带按温度排序着色，否则两条不同温度的曲线会共用同一颜色而被读成重复测量。"
+ },
+ {
+  "id": "stacked_curves-01",
+  "label": "变角度透射堆叠",
+  "patterns": [
+   "stacked_curves"
+  ],
+  "data_schema": "theta_deg, wavelength_nm, transmittance",
+  "recipe": "每个角度一条曲线，按固定偏移逐条上移，用于显示峰形随角度的移动而非绝对值；须在图注或纵轴写明偏移量，否则读者会把堆叠高度误读为强度大小。"
+ },
+ {
+  "id": "stacked_curves-02",
+  "label": "泵浦延迟时间分辨差分谱",
+  "patterns": [
+   "stacked_curves"
+  ],
+  "data_schema": "delay_ps, wavelength_nm, differential_signal",
+  "recipe": "按延迟序列堆叠差分透过率变化；正负信号同框时须保留零线，若曲线被偏移抬高，改用二维热图显示符号更诚实。"
+ },
+ {
+  "id": "stacked_curves-03",
+  "label": "温漂发光谱序列",
+  "patterns": [
+   "stacked_curves"
+  ],
+  "data_schema": "temperature_K, wavelength_nm, electroluminescence",
+  "recipe": "温度序列堆叠用于同时展示峰位红移与强度淬灭；每条曲线须按同一偏移量抬升，不要为美观而单独缩放某一条，否则温升趋势会被读成噪声。"
+ },
+ {
   "id": "table-01",
   "label": "位置与通道响应表",
   "patterns": [

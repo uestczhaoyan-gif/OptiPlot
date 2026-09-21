@@ -8,6 +8,7 @@ import zipfile
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.colors import to_hex
 from optiplot import analyze_file, analyze_dataframe, recommend, Recommendation
 from optiplot.render import render, FIGURE_TYPES
 from optiplot.export import export_bundle
@@ -464,6 +465,26 @@ def test_peak_evolution_counts_skipped_settings():
     assert len(ax.lines[0].get_xdata()) == tracked
 
 
+def test_stacked_curves_lift_each_curve_clear_of_the_last():
+    from optiplot.style import Style
+
+    p = analyze_file(ROOT / "examples" / "sample_angle_resolved.csv")
+    r = next(x for x in recommend(p) if x.id == "stacked_curves")
+    ax = render(p, r).axes[0]
+    spans = sorted(
+        (float(np.min(l.get_ydata())), float(np.max(l.get_ydata())))
+        for l in ax.lines
+        if len(l.get_ydata())
+    )
+    assert len(spans) == 15
+    for ceiling, next_floor in zip(spans, spans[1:]):
+        assert ceiling[1] < next_floor[0], "stacked curves still overlap"
+    assert len(ax.collections) == 15, "fill band missing"
+    assert len(render(p, r, style=Style(stack_fill=False)).axes[0].collections) == 0
+    wide = render(p, r, style=Style(stack_offset=3.0)).axes[0]
+    assert wide.get_ylim()[1] > ax.get_ylim()[1], "stack_offset changed nothing"
+
+
 def test_dual_axis_gives_each_series_its_own_scale():
     p = analyze_file(ROOT / "examples" / "sample_liv_sweep.csv")
     r = next(x for x in recommend(p) if x.id == "dual_axis")
@@ -488,6 +509,26 @@ def test_dual_axis_is_not_offered_across_frame_coordinates():
     beam map is not a second response -- it is the axis the map is read on."""
     p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
     assert "dual_axis" not in {r.id for r in recommend(p)}
+
+
+def test_a_family_wider_than_the_palette_gets_distinct_colours():
+    """Fifteen angles of one coating are neither a single curve nor replicates, so
+    handing two of them the same colour would misread as either."""
+    p = analyze_file(ROOT / "examples" / "sample_angle_resolved.csv")
+    r = next(x for x in recommend(p) if x.id == "spectrum_lines")
+    assert r.encodings["group"] == "theta_deg"
+    fig = render(p, r)
+    colours = {to_hex(line.get_color()) for line in fig.axes[0].lines}
+    colours.discard("#7A94AB")  # the zero guide line, not a series
+    assert len(colours) == 15, sorted(colours)
+    # and a small group count still gets the curated palette, untouched
+    devices = analyze_file(ROOT / "examples" / "sample_devices.csv")
+    box = next(x for x in recommend(devices) if x.id == "box")
+    assert box.encodings["group"] == "device"
+    from optiplot.render import _group_colours
+    from optiplot.style import Style
+
+    assert _group_colours(Style(), 3) == Style().colors[:3]
 
 
 def test_new_types_are_medium_tier():
