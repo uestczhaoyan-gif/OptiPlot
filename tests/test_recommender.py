@@ -117,13 +117,17 @@ class RecommenderTestCase(unittest.TestCase):
                 self.assertFalse(p.grid_like)
                 self.assertNotIn("contour", recs)
 
-    def test_missing_grid_measurement_prevents_surface_recommendation(self):
+    def test_a_grid_hole_blanks_a_heatmap_but_never_a_contour(self):
+        """A missing cell is information a heatmap can show as white. Contourfill
+        would interpolate across the gap and print the result as measured."""
         x, y = np.meshgrid(np.arange(3), np.arange(3))
         z = np.arange(9, dtype=float)
         z[-1] = np.nan
         p, recs = self.suggestions({"x": x.ravel(), "y": y.ravel(), "signal": z})
         self.assertFalse(p.grid_like)
-        self.assertNotIn("heatmap", recs)
+        self.assertNotIn("contour", recs)
+        self.assertEqual(recs["heatmap"].tier, "medium")
+        self.assertIn("缺 1 个", recs["heatmap"].reason)
 
     def test_polar_preserves_explicit_degrees_and_radians(self):
         for name, angles, unit in [
@@ -263,7 +267,9 @@ class RecommenderTestCase(unittest.TestCase):
         self.assertIn("errorbar", recs)
         self.assertTrue(all("group" not in r.encodings for r in recs.values()))
 
-    def test_a_polar_plot_is_not_grouped_by_its_own_angle(self):
+    def test_a_polar_plot_splits_repeated_angles_or_declines(self):
+        """Several radii at one angle are a cloud wrapped around the circle, not a
+        response curve -- unless something splits them into curves."""
         p, recs = self.suggestions(
             {
                 "theta_deg": np.repeat(np.arange(0.0, 360.0, 30.0), 3),
@@ -271,7 +277,18 @@ class RecommenderTestCase(unittest.TestCase):
                 "channel": np.tile(["a", "b", "c"], 12),
             }
         )
-        self.assertNotEqual(recs["polar"].encodings.get("group"), "theta_deg")
+        self.assertEqual(recs["polar"].encodings["group"], "channel")
+
+        spread, spread_recs = self.suggestions(
+            {
+                "theta_deg": np.repeat(np.arange(0.0, 360.0, 30.0), 6),
+                "wavelength_nm": np.tile(np.linspace(1200.0, 1700.0, 6), 12),
+                "reflectance": np.random.default_rng(3).uniform(0.2, 1.0, 72),
+            }
+        )
+        self.assertNotIn("polar", spread_recs)
+        self.assertIn("spectrum_lines", spread_recs)
+        self.assertNotEqual(spread_recs["spectrum_lines"].encodings.get("group"), "wavelength_nm")
 
 
 class FileInputTestCase(unittest.TestCase):

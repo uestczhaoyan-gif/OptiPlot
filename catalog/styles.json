@@ -444,6 +444,24 @@
   "recipe": "先汇总真实与预测类别计数，再提供按行归一化选项；色标注明计数或比例。"
  },
  {
+  "id": "heatmap-09",
+  "label": "变角度图谱留白热图",
+  "patterns": [
+   "heatmap"
+  ],
+  "data_schema": "theta_deg, wavelength_nm, reflectance",
+  "recipe": "角度 × 波长矩阵里缺测的格点留白而不是插值补齐；须在图注写明缺测数量，否则读者会把白格当成一个数值（通常是当成零或当成背景）。"
+ },
+ {
+  "id": "heatmap-10",
+  "label": "扫描失败点的处理",
+  "patterns": [
+   "heatmap"
+  ],
+  "data_schema": "x_position_mm, wavelength_nm, response",
+  "recipe": "自动位移台丢点会留下整行或整列空白；先确认空白是丢点还是样品本身没有响应，两者在热图上看起来一样但结论完全相反。"
+ },
+ {
   "id": "peak_annotation-01",
   "label": "激光峰值波长与半高宽读数",
   "patterns": [

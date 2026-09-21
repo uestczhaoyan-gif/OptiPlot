@@ -538,6 +538,33 @@ def _find_grid(data, eligible) -> list[str]:
     return []
 
 
+def _partial_grid(data, eligible):
+    """(x, y, z, coverage, holes) for a regular scan that is mostly but not fully
+    sampled.
+
+    A dropped reading in an angle-by-wavelength map leaves one blank cell, and a
+    heatmap can show that honestly. A scatter cloud is not that: the coverage
+    ratio is what separates a grid with holes from points that never formed a
+    grid, and the two need different plots.
+    """
+    axes = sorted((c for c in eligible if _axis_rank(c) < 99), key=_axis_rank)
+    best = None
+    for i, x in enumerate(axes):
+        for y in axes[i + 1 :]:
+            for z in eligible:
+                if z in {x, y}:
+                    continue
+                valid = data[[x, y, z]].dropna()
+                nx, ny = valid[x].nunique(), valid[y].nunique()
+                if nx < 3 or ny < 3 or valid.duplicated([x, y]).any():
+                    continue
+                cells = nx * ny
+                coverage = len(valid) / cells
+                if 0.6 <= coverage < 1.0 and (best is None or coverage > best[3]):
+                    best = (x, y, z, coverage, cells - len(valid))
+    return best
+
+
 def _peak_trackable(p: DataProfile, data) -> dict | None:
     """First (parameter, wavelength, response) triple whose curves have a peak
     that can be tracked, or None.
@@ -664,21 +691,55 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             enc.copy(),
             1,
         )
+    else:
+        partial = _partial_grid(data, eligible)
+        if partial:
+            gx, gy, gz, coverage, holes = partial
+            add(
+                "heatmap",
+                "二维参数热图（缺测留白）",
+                "medium",
+                f"{gx} × {gy} 的规则扫描只覆盖 {coverage:.0%} 的格点，缺 {holes} 个；"
+                "热图把缺测格留白而不是插值补齐，因此不能对全区域积分或求均值，"
+                "等值线在这种网格上会跨缺测区插值，故不推荐",
+                {"x": gx, "y": gy, "z": gz},
+                1,
+            )
 
     if p.angle_columns and not p.grid_like:
         theta = p.angle_columns[0]
         radius = next((c for c in eligible if c != theta and c not in p.axis_columns), None)
         if radius is None:
             radius = next((c for c in eligible if c != theta), None)
+        repeats = bool(
+            radius and data[[theta, radius]].dropna().duplicated(theta).any()
+        )
+        polar_group = None
+        if repeats:
+            # One radius per angle is what makes a polar response a curve. Where
+            # several share an angle the figure is only honest once something
+            # splits them -- a channel label, or the second scan axis -- and the
+            # split has to leave each group tracing the circle once.
+            for candidate in [group] + [c for c in p.axis_columns if c != theta]:
+                if not candidate or candidate == theta:
+                    continue
+                trio = data[[theta, radius, candidate]].dropna()
+                levels = trio[candidate].nunique()
+                if 2 <= levels <= 8 and not trio.duplicated([theta, candidate]).any():
+                    polar_group = candidate
+                    break
         if (
             radius
             and _valid_count(data, [theta, radius]) >= 3
             and (data[radius].dropna() >= 0).all()
+            and (not repeats or polar_group is not None)
         ):
             enc = {"theta": theta, "r": radius, "angle_unit": p.angle_units.get(theta, "deg")}
             # Grouping a polar plot by its own angle leaves one radius per group,
             # which is a scatter of dots with a legend, not a comparison.
-            if group and group != theta:
+            if polar_group:
+                enc["group"] = polar_group
+            elif group and group != theta:
                 enc["group"] = group
             add(
                 "polar",

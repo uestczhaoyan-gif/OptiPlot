@@ -523,6 +523,24 @@ def test_a_curve_without_an_interior_peak_gets_no_annotation():
     assert "spectrum_lines" in {r.id for r in recommend(p)}
 
 
+def test_a_grid_with_holes_is_a_heatmap_but_not_a_contour():
+    """Blank cells are honest on a colour map and dishonest under contourf, which
+    would interpolate a value across the gap and print it as measured."""
+    p = analyze_file(ROOT / "examples" / "sample_angle_resolved.csv")
+    recs = {r.id: r for r in recommend(p)}
+    assert "contour" not in recs
+    heat = recs["heatmap"]
+    holes = int(p.data.isna().any(axis=1).sum())
+    assert heat.tier == "medium" and str(holes) in heat.reason, (heat.tier, heat.reason)
+    ax = render(p, heat).axes[0]
+    assert ax.collections, "pcolormesh never drawn"
+
+
+def test_a_scatter_cloud_is_not_mistaken_for_a_grid_with_holes():
+    p = analyze_file(ROOT / "examples" / "sample_dense_scatter.csv")
+    assert "heatmap" not in {r.id for r in recommend(p)}
+
+
 def test_dual_axis_gives_each_series_its_own_scale():
     p = analyze_file(ROOT / "examples" / "sample_liv_sweep.csv")
     r = next(x for x in recommend(p) if x.id == "dual_axis")

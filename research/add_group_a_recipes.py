@@ -13,6 +13,15 @@ styles_path = here / "catalog" / "styles.json"
 styles = json.loads(styles_path.read_text(encoding="utf-8"))
 
 NEW = [
+    # --- heatmap, incomplete grid ---
+    ("heatmap", "变角度图谱留白热图",
+     "theta_deg, wavelength_nm, reflectance",
+     "角度 × 波长矩阵里缺测的格点留白而不是插值补齐；须在图注写明缺测数量，"
+     "否则读者会把白格当成一个数值（通常是当成零或当成背景）。"),
+    ("heatmap", "扫描失败点的处理",
+     "x_position_mm, wavelength_nm, response",
+     "自动位移台丢点会留下整行或整列空白；先确认空白是丢点还是样品本身没有响应，"
+     "两者在热图上看起来一样但结论完全相反。"),
     # --- peak_annotation ---
     ("peak_annotation", "激光峰值波长与半高宽读数",
      "wavelength_nm, electroluminescence",
