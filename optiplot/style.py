@@ -64,7 +64,6 @@ DATA_KEYS = frozenset(
         "xlog",
         "ylog",
         "dpi",
-        "cmap",
     }
 )
 # Multipliers, not absolute points: raising the base size should move every
@@ -86,6 +85,41 @@ def _resolve(candidates: list[str], installed: set[str]) -> list[str]:
     """Keep only families that exist, always ending in a font that does."""
     hits = [c for c in candidates if c in installed]
     return hits or ["DejaVu Sans"]
+
+
+# Colour-blind-safe categorical palettes. Okabe-Ito is the default and the one
+# the renderers were built around; the Paul Tol sets give more slots.
+PALETTES = {
+    "okabe": ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000"],
+    "tol_bright": ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB"],
+    "tol_vibrant": ["#EE7733", "#0077BB", "#33BBEE", "#EE3377", "#CC3311", "#009988", "#BBBBBB"],
+    "tol_muted": [
+        "#CC6677", "#332288", "#DDCC77", "#117733", "#88CCEE",
+        "#882255", "#44AA99", "#999933", "#AA4499",
+    ],
+}
+LEGEND_LOCS = (
+    "best", "none", "upper right", "upper left", "lower left", "lower right",
+    "right", "center left", "center right", "lower center", "upper center", "center",
+)
+# `legend.loc` is a validated rcParam and accepts only the named positions -
+# "auto" works as an ax.legend(loc=) argument but not here. Matplotlib's own
+# automatic placement is called "best", so that is what we default to, and
+# "none" is intercepted by _legend before it can reach the rcParams dict.
+LEGEND_PARAM_DEFAULT = "best"
+LEGEND_TITLE_SIZES = ("small", "medium", "large", "x-large")
+
+
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    """Strict #RRGGBB. A 3-digit shorthand or a bare hex run is rejected with a
+    clear message rather than being guessed at."""
+    text = value.strip()
+    if not text.startswith("#") or len(text) != 7:
+        raise ValueError(f"颜色需写成 #RRGGBB 七位形式，当前 {value!r}")
+    digits = text[1:]
+    if any(ch not in "0123456789abcdefABCDEF" for ch in digits):
+        raise ValueError(f"颜色含非十六进制字符：{value!r}")
+    return tuple(int(digits[i : i + 2], 16) for i in (0, 2, 4))
 
 
 @dataclass(frozen=True)
@@ -141,6 +175,37 @@ class Style:
     x_reverse: bool = False
     y_reverse: bool = False
     y_zero_centered: bool = False
+    # E legend
+    legend: str = "best"
+    legend_columns: int = 1
+    legend_frame: bool = False
+    legend_frame_alpha: float = 0.0
+    legend_facecolor: str = "none"
+    legend_edgecolor: str = "#CCCCCC"
+    legend_handle_length: float = 1.6
+    legend_handle_textpad: float = 0.5
+    legend_label_spacing: float = 0.5
+    legend_column_spacing: float = 1.0
+    legend_border_padding: float = 0.2
+    legend_title_size: str = "large"
+    # F colour
+    palette: str = "okabe"
+    custom_colors: str = ""
+    cmap: str = "auto"
+
+    @property
+    def colors(self) -> list[str]:
+        if self.palette == "custom":
+            return self.parsed_custom_colors()
+        return list(PALETTES[self.palette])
+
+    def parsed_custom_colors(self) -> list[str]:
+        values = [part.strip() for part in self.custom_colors.split(",") if part.strip()]
+        if not values:
+            raise ValueError('palette="custom" 需要 custom_colors 给出至少一个 #RRGGBB')
+        for value in values:
+            _hex_to_rgb(value)  # validates, raises on a malformed entry
+        return values
 
     # ------------------------------------------------------------------
     def validate(self) -> "Style":
@@ -199,6 +264,31 @@ class Style:
         if self.y_zero_centered and self.y_min is not None and self.y_max is not None:
             raise ValueError("y_zero_centered 与手动 y 范围冲突，请只设一个")
         self.spines_visible()
+        if self.legend not in LEGEND_LOCS:
+            raise ValueError(f"legend 需是 {'/'.join(LEGEND_LOCS)} 之一，当前 {self.legend!r}")
+        if not 1 <= int(self.legend_columns) <= 6:
+            raise ValueError(f"legend_columns 需在 1–6 之间，当前 {self.legend_columns}")
+        if self.legend_title_size not in LEGEND_TITLE_SIZES:
+            raise ValueError(f"legend_title_size 需是 {'/'.join(LEGEND_TITLE_SIZES)} 之一")
+        for name in (
+            "legend_handle_length", "legend_handle_textpad", "legend_label_spacing",
+            "legend_column_spacing", "legend_border_padding",
+        ):
+            value = float(getattr(self, name))
+            if not 0.0 <= value <= 5.0:
+                raise ValueError(f"{name} 需在 0–5 之间，当前 {value}")
+        if not 0.0 <= float(self.legend_frame_alpha) <= 1.0:
+            raise ValueError(f"legend_frame_alpha 需在 0–1 之间，当前 {self.legend_frame_alpha}")
+        if self.palette not in PALETTES and self.palette != "custom":
+            raise ValueError(
+                f"palette 需是 {'/'.join(PALETTES)} 或 custom，当前 {self.palette!r}"
+            )
+        if self.palette == "custom":
+            self.parsed_custom_colors()
+        if self.custom_colors and self.palette != "custom":
+            raise ValueError("custom_colors 只有在 palette=\"custom\" 时才会被使用")
+        if self.legend_frame:
+            _hex_to_rgb(self.legend_edgecolor)
         return self
 
     def size_inches(self) -> tuple[float, float]:
@@ -278,6 +368,19 @@ class Style:
             "xtick.minor.visible": self.tick_minor,
             "ytick.minor.visible": self.tick_minor,
             "axes.axisbelow": self.grid_under_data,
+            "legend.loc": LEGEND_PARAM_DEFAULT if self.legend == "none" else self.legend,
+            # There is no legend.ncols rcParam; column count is passed to
+            # ax.legend() per call. See Style.legend_kwargs().
+            "legend.frameon": self.legend_frame,
+            "legend.framealpha": self.legend_frame_alpha,
+            "legend.facecolor": self.legend_facecolor,
+            "legend.edgecolor": self.legend_edgecolor,
+            "legend.handlelength": self.legend_handle_length,
+            "legend.handletextpad": self.legend_handle_textpad,
+            "legend.labelspacing": self.legend_label_spacing,
+            "legend.columnspacing": self.legend_column_spacing,
+            "legend.borderpad": self.legend_border_padding,
+            "legend.title_fontsize": self.legend_title_size,
             "savefig.facecolor": "white",
             # Vector text stays editable in Illustrator unless the caller asks
             # for paths; both matter for journal submission.
@@ -314,6 +417,10 @@ class Style:
             if text.get_text():
                 text.set_fontfamily(stack)
         return self
+
+    def legend_kwargs(self) -> dict:
+        """Artist-level legend arguments - the ones with no rcParam."""
+        return {"ncols": int(self.legend_columns)}
 
     def configure_axes(self, ax, kind: str) -> None:
         """Per-Axes settings that rcParams cannot express: locators, formatters,

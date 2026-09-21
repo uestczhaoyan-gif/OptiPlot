@@ -43,6 +43,18 @@ def _finite(df, names):
     return out
 
 
+def _legend(ax, style, **overrides):
+    """One place that decides whether a legend exists at all.
+
+    Everything else about it - frame, font size, columns, handle length,
+    spacing - arrives from Style through rcParams, so a renderer branch only
+    ever passes a per-type placement override.
+    """
+    if style.legend == "none":
+        return None
+    return ax.legend(**style.legend_kwargs(), **overrides)
+
+
 def _colorbar(fig, m, ax, label, style):
     """Artist-level styling: the one routing point rcParams cannot reach."""
     cb = fig.colorbar(m, ax=ax, label=label)
@@ -116,6 +128,7 @@ def render(profile, rec, output=None, options=None, style=None):
 
 
 def _draw(ax, fig, df, kind, e, opts, style):
+    palette = style.colors
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
         group = e["group"]
@@ -125,7 +138,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
         ):
             before_lines, before_cols = len(ax.lines), len(ax.collections)
             _draw(ax, fig, subset, kind, sub_enc, opts, style)
-            color = COLORS[i % len(COLORS)]
+            color = palette[i % len(palette)]
             for line in ax.lines[before_lines:]:
                 line.set_color(color)
                 line.set_label("_nolegend_")
@@ -135,7 +148,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
             for container in ax.containers:
                 container.set_label("_nolegend_")
             ax.plot([], [], color=color, label=str(name))
-        ax.legend(frameon=False, fontsize="small", title=group)
+        _legend(ax, style, title=group)
         return
     if kind == "spectrum_lines":
         xname = e["x"]
@@ -152,24 +165,25 @@ def _draw(ax, fig, df, kind, e, opts, style):
             ax.plot(
                 d[xname],
                 d[yname],
-                color=COLORS[i % len(COLORS)],
+                color=palette[i % len(palette)],
                 linestyle=["-", "--", "-.", ":"][i % 4],
                 lw=1.65,
                 label=yname,
             )
         ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
         if len(ys) > 1:
-            ax.legend(frameon=False, fontsize="small")
+            _legend(ax, style)
     elif kind in ["scatter_fit", "density"]:
         xname, yname = e["x"], e["y"]
         d = _finite(df, [xname, yname])
         x, y = d[xname].to_numpy(), d[yname].to_numpy()
         if kind == "density":
-            m = ax.hexbin(x, y, gridsize=45, mincnt=1, cmap="viridis", bins="log")
+            m = ax.hexbin(x, y, gridsize=45, mincnt=1,
+                             cmap=style.cmap if style.cmap != "auto" else "viridis", bins="log")
             _colorbar(fig, m, ax, "Count (log color scale)", style)
         else:
             ax.scatter(
-                x, y, s=16, alpha=0.65, color=COLORS[0], edgecolors="none", rasterized=len(d) > 5000
+                x, y, s=16, alpha=0.65, color=palette[0 % len(palette)], edgecolors="none", rasterized=len(d) > 5000
             )
             if opts.get("fit", e.get("fit", "none")) == "linear":
                 if len(d) < 3 or np.unique(x).size < 2:
@@ -181,10 +195,10 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 ax.plot(
                     xx,
                     np.polyval(coef, xx),
-                    color=COLORS[1],
+                    color=palette[1 % len(palette)],
                     label=f"OLS: y={coef[0]:.3g}x{coef[1]:+.3g}; R²={r2:.3f}",
                 )
-                ax.legend(frameon=False, fontsize="small")
+                _legend(ax, style)
         ax.set(xlabel=xname, ylabel=yname)
     elif kind == "errorbar":
         xname, yname = e["x"], e["y"]
@@ -195,7 +209,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
             if np.any(err < 0):
                 raise ValueError("误差值不能为负数。")
             ax.errorbar(
-                d[xname], d[yname], yerr=err, fmt="o", ms=4, capsize=3, color=COLORS[0], label=yerr
+                d[xname], d[yname], yerr=err, fmt="o", ms=4, capsize=3, color=palette[0 % len(palette)], label=yerr
             )
         else:
             d = _finite(df, [xname, yname])
@@ -207,7 +221,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
                     stats.index,
                     stats["mean"],
                     marker="x",
-                    color=COLORS[0],
+                    color=palette[0 % len(palette)],
                     label="n=1; uncertainty unavailable",
                 )
                 ax.set(xlabel=xname, ylabel=yname)
@@ -230,7 +244,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 fmt="o-",
                 ms=4,
                 capsize=3,
-                color=COLORS[0],
+                color=palette[0 % len(palette)],
                 label=label,
             )
             if (~valid).any():
@@ -238,11 +252,11 @@ def _draw(ax, fig, df, kind, e, opts, style):
                     stats.index[~valid],
                     stats.loc[~valid, "mean"],
                     marker="x",
-                    color=COLORS[1],
+                    color=palette[1 % len(palette)],
                     label="n=1; uncertainty unavailable",
                 )
         ax.set(xlabel=xname, ylabel=yname)
-        ax.legend(frameon=False, fontsize="small")
+        _legend(ax, style)
     elif kind in ["heatmap", "contour", "matrix_heatmap"]:
         if kind == "matrix_heatmap":
             z = df[e.get("columns", numeric)].to_numpy(dtype=float)
@@ -260,7 +274,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
             z = table.to_numpy()
             if min(z.shape) < 2:
                 raise ValueError("二维图至少需要每个方向有两个坐标。")
-        cmap = opts.get("cmap", "auto")
+        cmap = style.cmap
         signed = np.nanmin(z) < 0 < np.nanmax(z)
         norm = None
         if cmap == "auto":
@@ -285,8 +299,8 @@ def _draw(ax, fig, df, kind, e, opts, style):
         if (d[r] < 0).any():
             raise ValueError("极坐标半径存在负值，请使用角度-响应折线图以保留符号。")
         ix = np.argsort(angles)
-        ax.plot(angles[ix], d[r].to_numpy()[ix], color=COLORS[0], marker="o", ms=3, lw=1.5, label=r)
-        ax.legend(loc="upper right", bbox_to_anchor=(1.35, 1.13), frameon=False, fontsize="small")
+        ax.plot(angles[ix], d[r].to_numpy()[ix], color=palette[0 % len(palette)], marker="o", ms=3, lw=1.5, label=r)
+        _legend(ax, style, loc="upper right", bbox_to_anchor=(1.35, 1.13))
         return
     elif kind in ["distribution", "box"]:
         value = e.get("value", numeric[0] if numeric else None)
@@ -309,7 +323,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 raise ValueError("没有可绘制的分组数值。")
             bp = ax.boxplot(arrays, patch_artist=True, showfliers=False)
             for box in bp["boxes"]:
-                box.set(facecolor="#CAE5F1", edgecolor=COLORS[0])
+                box.set(facecolor="#CAE5F1", edgecolor=palette[0 % len(palette)])
             rng = np.random.default_rng(7)
             for i, a in enumerate(arrays):
                 ax.scatter(
@@ -317,7 +331,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
                     a,
                     s=9,
                     alpha=0.45,
-                    color=COLORS[i % len(COLORS)],
+                    color=palette[i % len(palette)],
                 )
             ax.set_xticks(range(1, len(labels) + 1), labels, rotation=20 if len(labels) > 5 else 0)
             ax.set(xlabel=group, ylabel=value)
@@ -326,7 +340,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
             ax.hist(
                 a,
                 bins=min(80, max(5, int(np.sqrt(len(a))))),
-                color=COLORS[0],
+                color=palette[0 % len(palette)],
                 alpha=0.85,
                 edgecolor="white",
             )
@@ -406,7 +420,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 0.10,
                 boxstyle="round,pad=.012",
                 facecolor="#E8F4FA",
-                edgecolor=COLORS[0],
+                edgecolor=palette[0 % len(palette)],
                 zorder=2,
             )
             ax.add_patch(boxes[v])

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from optiplot import analyze_dataframe, recommend
+from optiplot import analyze_dataframe, analyze_file, recommend
 from optiplot.render import render
 from optiplot.style import Style, SIZES, PRESET_FONT, DATA_KEYS, installed_families
 
@@ -365,6 +365,132 @@ def test_image_and_diagram_types_keep_their_data_and_stay_ungridded():
     assert spine(framed, "top").get_visible()
 
 
+# ── E legend ───────────────────────────────────────────────────────
+
+
+def test_legend_none_suppresses_the_legend_entirely():
+    assert drawn()[1].get_legend() is not None
+    assert drawn({"legend": "none"})[1].get_legend() is None
+
+
+def test_legend_columns_reach_the_legend():
+    """Legend has set_ncols but no getter, so the observable proof is the pixel
+    digest test at the end of this file."""
+    assert Style(legend_columns=3).legend_kwargs() == {"ncols": 3}
+
+
+def test_legend_frame_and_handle_length_are_applied():
+    plain = drawn()[1]
+    framed = drawn({"legend_frame": True, "legend_frame_alpha": 1.0})[1]
+    assert not plain.get_legend().get_frame().get_visible()
+    assert framed.get_legend().get_frame().get_visible()
+    assert Style(legend_handle_length=3.0).rc_params()["legend.handlelength"] == 3.0
+
+
+def test_legend_font_size_follows_the_base_size():
+    """The legend used to be pinned at fontsize="small" regardless of canvas."""
+    small = Style(font_size=8).rc_params()["legend.fontsize"]
+    large = Style(font_size=16).rc_params()["legend.fontsize"]
+    assert large > small * 1.8
+
+
+# ── F colour ───────────────────────────────────────────────────────
+
+
+def test_default_palette_is_still_okabe_itto():
+    assert Style().colors[0] == "#0072B2"
+    assert Style().colors[1] == "#D55E00"
+
+
+def test_palette_switches_the_series_colours():
+    first = drawn({"palette": "okabe"})[1].lines[0].get_color()
+    other = drawn({"palette": "tol_vibrant"})[1].lines[0].get_color()
+    assert first != other
+
+
+def test_custom_palette_reaches_the_artists_and_cycles():
+    """sample_spectrum has three response columns and gets three colours, so the
+    fourth artist proves the palette cycles instead of running off the end."""
+    p = analyze_file(ROOT / "examples" / "sample_spectrum.csv")
+    rec = next(r for r in recommend(p) if r.id == "spectrum_lines")
+    ax = render(p, rec, style=Style(palette="custom",
+                                    custom_colors="#123456,#ABCDEF")).axes[0]
+    assert ax.lines[0].get_color() == "#123456"
+    assert ax.lines[1].get_color() == "#ABCDEF"
+    assert ax.lines[2].get_color() == "#123456"
+
+
+def test_custom_colours_without_the_custom_palette_is_an_error():
+    """Otherwise the user types six hex codes and nothing happens."""
+    with pytest.raises(ValueError, match="custom"):
+        Style(custom_colors="#123456,#ABCDEF").validate()
+
+
+@pytest.mark.parametrize("bad", ["#123", "red", "#GGHHII", "123456", "#12345", ""])
+def test_malformed_custom_colours_are_rejected(bad):
+    with pytest.raises(ValueError):
+        Style(palette="custom", custom_colors=bad).validate()
+
+
+def test_shipped_palettes_have_more_slots_than_the_default_line_limit():
+    """Every series beyond the palette length silently reuses a colour, so a
+    short palette is a real limit on how many curves stay distinguishable."""
+    from optiplot.style import PALETTES
+
+    for name, colors in PALETTES.items():
+        assert len(colors) >= 6, f"{name} offers only {len(colors)} colours"
+
+
+def test_cmap_now_comes_from_style_not_the_data_options():
+    grid = pd.DataFrame(
+        {
+            "x_um": np.tile(np.arange(16, dtype=float), 16),
+            "y_um": np.repeat(np.arange(16, dtype=float), 16),
+            "intensity_au": np.random.default_rng(7).normal(size=256),
+        }
+    )
+    p = analyze_dataframe(grid)
+    rec = next(r for r in recommend(p) if r.id == "heatmap")
+    viridis = render(p, rec, style=Style(cmap="viridis")).axes[0].collections[0].get_cmap().name
+    magma = render(p, rec, style=Style(cmap="magma")).axes[0].collections[0].get_cmap().name
+    assert (viridis, magma) == ("viridis", "magma")
+
+
+def test_cmap_auto_still_picks_a_diverging_map_for_signed_data():
+    """The zero-centred default is a scientific safeguard, not cosmetics."""
+    grid = pd.DataFrame(
+        {
+            "x_um": np.tile(np.arange(16, dtype=float), 16),
+            "y_um": np.repeat(np.arange(16, dtype=float), 16),
+        }
+    )
+    grid["delta"] = np.linspace(-1, 1, 256).reshape(16, 16).ravel()
+    p = analyze_dataframe(grid)
+    rec = next(r for r in recommend(p) if r.id == "heatmap")
+    assert render(p, rec, style=Style()).axes[0].collections[0].get_cmap().name == "RdBu_r"
+
+
+def test_legend_and_palette_knobs_change_the_rendered_pixels():
+    import hashlib
+
+    def digest(**kw):
+        fig = render(profile(), recommend(profile())[0], style=Style(**kw))
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=110)
+        fig.clear()
+        return hashlib.sha256(buf.getvalue()).hexdigest()
+
+    base = digest()
+    for kw in (
+        {"legend": "none"},
+        {"legend_columns": 2},
+        {"legend_frame": True, "legend_frame_alpha": 1.0},
+        {"palette": "tol_muted"},
+        {"palette": "custom", "custom_colors": "#111111,#222222,#333333"},
+    ):
+        assert digest(**kw) != base, f"{kw} changed nothing"
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -381,9 +507,15 @@ def test_image_and_diagram_types_keep_their_data_and_stay_ungridded():
         {"x_min": 5, "x_max": 5},
         {"y_min": 1, "y_max": 0},
         {"y_zero_centered": True, "y_min": 0, "y_max": 1},
+        {"legend": "wherever"},
+        {"legend_columns": 0},
+        {"legend_title_size": "gigantic"},
+        {"legend_handle_length": 99},
+        {"palette": "rainbow"},
+        {"palette": "custom"},
     ],
 )
-def test_bad_axis_values_are_rejected(bad):
+def test_bad_style_values_are_rejected(bad):
     with pytest.raises(ValueError):
         Style(**bad).validate()
 

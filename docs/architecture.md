@@ -22,7 +22,7 @@ flowchart LR
 | 文件 | 职责 |
 |---|---|
 | `optiplot/core.py` | 导入、验证、物理变量名称启发式、推荐条件与等级。`analyze_dataframe` 不修改调用者的 DataFrame |
-| `optiplot/style.py` | 样式参数的唯一所有者。`Style` 是不可变 dataclass，负责把参数路由到 Matplotlib 的五个应用点：`rc_params()`（绘制期继承）、`figure_kwargs()`（Figure 构造）、`configure_axes()`（逐 Axes：定位器、格式化器、范围、网格）、`bake_into()`（逐 artist，字体族）、`savefig_kwargs()`（导出）。`from_options()` 把一次传入的扁平 dict 拆成「样式」与「数据内容」两半，未知键直接报错。`AXIS_STYLED` 限定哪些图型可以套用轴样式 |
+| `optiplot/style.py` | 样式参数的唯一所有者。`Style` 是不可变 dataclass，负责把参数路由到 Matplotlib 的六个应用点：`rc_params()`（绘制期继承）、`figure_kwargs()`（Figure 构造）、`bake_into()`（逐 artist，字体族）、`configure_axes()`（逐 Axes：定位器、格式化器、范围、网格）、`legend_kwargs()`（逐次 `ax.legend()` 调用，因为 `legend.ncols` 不是 rcParam）、`savefig_kwargs()`（导出）。`from_options()` 把一次传入的扁平 dict 拆成「样式」与「数据内容」两半，未知键直接报错。`AXIS_STYLED` 限定哪些图型可以套用轴样式 |
 | `optiplot/render.py` | 确定性 Matplotlib 渲染器。`FIGURE_TYPES` 是图型 ID 的权威列表；样式参数走 `Style`；每种图显式消耗 `Recommendation.encodings` |
 | `optiplot/export.py` | 完整表格、配方与数据校验、独立渲染脚本、版本及图片打包 |
 | `optiplot/cli.py` | 批量导出接口 |
@@ -70,6 +70,6 @@ flowchart LR
 
 数据推断与渲染当前在 GUI 主线程，适用于中小规模研究数据。六边形分箱可改善高密度散点显示，但数十万行或超宽矩阵仍可能令界面等待。下一阶段可增加后台加载、可取消任务、通道选择与按需预览。
 
-样式参数已建立管道（`optiplot/style.py`），A 排版组与 B 画布的 `size` 已落地：字体族、中文字体、基准字号、五个元素的独立字号倍率、标题/轴标签字重、轴标与刻度留白。C 坐标轴（脊线显隐与线宽、刻度方向与密度、网格）、E 图例、F 颜色、H 导出、I 样式预设仍待做——目前脊线与网格线宽在 `rc_params()` 里是写死的常量，已注释标明。
+样式参数已建立管道（`optiplot/style.py`），A 排版、B 画布的 `size`、C 坐标轴、E 图例、F 颜色五组已落地。仍待做：B 画布余下部分（自定义尺寸与单位、宽高比锁定、四边留白、布局方式、背景色）、D 数据系列（线宽、线型、标记形状与大小、填充方式、误差棒帽宽、柱宽、散点大小映射——目前这些仍是 `_draw` 里的字面量）、H 导出（TIFF、预览与导出 DPI 分离、SVG 字体路径或文本、透明背景、多尺寸一次输出）、I 样式预设（整套参数存成 JSON 配方并进可复现 ZIP）。
 
 扩展优先级见 [roadmap](roadmap.md)：图型扩充与样式参数系统在前；多面板排版、带量纲的列角色配置、光路 SVG 元件、物理拟合模型插件随后。Python 引擎是本版实现，MATLAB 渲染后端尚未实现。
