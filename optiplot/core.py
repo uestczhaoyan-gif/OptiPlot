@@ -82,6 +82,77 @@ def _is_angle(name: str) -> bool:
     return _has(name, {"angle", "theta", "phi", "azimuth", "θ", "φ"}, ("角度", "方位角"))
 
 
+# A trailing token only counts as a unit if it really is one. Matching on length
+# alone reads the series label in `device_A` as a unit and then declares
+# device_A and device_B incomparable, which silently kills the difference and
+# ratio options on exactly the data they are most useful for.
+UNITS = {
+    # length
+    "nm", "um", "µm", "mm", "cm", "m", "mkm", "in", "px", "angstrom", "a0",
+    # energy
+    "ev", "kev", "mev", "gev", "j", "nj", "uj", "mj", "kj", "cm-1", "cm1",
+    # time
+    "fs", "ps", "ns", "us", "µs", "ms", "s", "min", "h", "hr", "d",
+    # frequency
+    "hz", "khz", "mhz", "ghz", "thz", "phz",
+    # electrical
+    "v", "mv", "uv", "µv", "kv", "a", "ma", "ua", "µa", "na", "pa", "k_a",
+    "w", "mw", "uw", "µw", "nw", "gw", "db", "dbm", "dbc",
+    # photometric / radiometric
+    "au", "arb", "counts", "cps", "rps", "lumens", "lux", "w_m2", "w_cm2",
+    # other
+    "deg", "degree", "rad", "percent", "pct", "%", "k", "mk", "g", "mg", "ug",
+    "µg", "kg", "mol", "mmol", "umol", "m", "ohm", "omega", "f", "pf", "nf",
+}
+
+
+def _unit_of(name: str) -> str | None:
+    """Trailing unit token, only if it is actually a known unit: `x_um` -> "um",
+    but `device_A` -> None."""
+    parts = re.split(r"[_\s.]+", str(name).strip())
+    if len(parts) < 2:
+        return None
+    tail = parts[-1].lower().replace("²", "2").replace("³", "3")
+    # Single letters are too ambiguous to trust: "A" is the ampere, but a trailing
+    # A/B/C is far more often a series label. Losing "m" and "s" as units costs
+    # less than mislabelling every device_A / device_B pair as incomparable.
+    return tail if len(tail) >= 2 and tail in UNITS else None
+
+
+def _comparable(a: str, b: str) -> bool:
+    """Whether two columns are the same kind of quantity, which is what makes a
+    difference or ratio meaningful.
+
+    Subtracting a position from an intensity is arithmetically valid and
+    physically empty, so the pair has to agree on unit when both name one, and
+    neither may be an independent variable.
+    """
+    if _axis_rank(a) < 99 or _axis_rank(b) < 99:
+        return False
+    ua, ub = _unit_of(a), _unit_of(b)
+    if ua and ub:
+        return ua == ub
+    # No unit on either side: require a shared leading stem, so device_A and
+    # device_B pair but alpha and beta do not. Being unable to tell is a reason
+    # to withhold the option, not to offer it.
+    if not ua and not ub:
+        sa = re.split(r"[_\s.]+", str(a))[0].lower()
+        sb = re.split(r"[_\s.]+", str(b))[0].lower()
+        return sa == sb
+    return False
+
+
+def _is_wavelength(name: str) -> bool:
+    """Only a wavelength can be relabelled as photon energy via 1239.84/λ.
+    Frequency and wavenumber axes are rank-0 scan axes too but invert differently,
+    so they must not share this check."""
+    return _has(
+        name,
+        {"wavelength", "lambda", "nm"},
+        ("波长",),
+    )
+
+
 def _axis_rank(name: str) -> int:
     tokens = _tokens(name)
     if tokens & {"wavelength", "lambda", "frequency", "freq", "wavenumber"} or any(
@@ -540,6 +611,69 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 "横轴名称含扫描轴信息，或观测按横轴有序；曲线显示采样点间变化",
                 enc,
                 6,
+            )
+
+        # --- derived comparisons between response columns on the same scan grid.
+        # All of these require the columns to share x values row by row; nothing
+        # is interpolated onto a common grid, because that would invent samples.
+        # They also require the columns to measure the same quantity, because
+        # subtracting a position from an intensity is arithmetically valid and
+        # physically empty.
+        measured = [c for c in line_ys if _valid_count(data, [x, c]) >= 4]
+        pairs = [
+            (a, b)
+            for i, a in enumerate(measured)
+            for b in measured[i + 1 :]
+            if _comparable(a, b)
+        ]
+        if pairs:
+            a, b = pairs[0]
+            both = data[[x, a, b]].dropna()
+            if len(both) >= 4:
+                denc = {"x": x, "y": [a, b]}
+                if group:
+                    denc["group"] = group
+                add(
+                    "spectral_difference",
+                    "两列差值 A − B",
+                    "medium",
+                    f"{a} 与 {b} 是同一网格上的同类量，可逐点相减（有效配对 {len(both)} 行）；"
+                    "顺序决定符号，请确认是 A−B 而非 B−A",
+                    denc,
+                    0,
+                )
+                denominator = both[b].to_numpy()
+                live = int((np.abs(denominator) > 1e-12 * max(np.abs(denominator).max(), 1e-30)).sum())
+                if live >= 4:
+                    add(
+                        "spectral_ratio",
+                        "两列比值 A / B",
+                        "medium",
+                        f"{a} 与 {b} 同类，可逐点相除；{len(both) - live} 行因分母接近零被屏蔽，"
+                        "比值在屏蔽点附近不可信",
+                        denc,
+                        1,
+                    )
+        alike = [c for c in measured if c and pairs and _comparable(pairs[0][0], c)]
+        if len(alike) >= 3:
+            add(
+                "spectral_envelope",
+                "多列包络带（最小–最大）",
+                "medium",
+                f"{len(alike)} 列同类且同网格，可显示取值范围；"
+                "这是极差不是标准差，列数少时会高估分散程度",
+                {"x": x, "y": alike[:12]},
+                2,
+            )
+        if _is_wavelength(x) and (data[x].dropna() > 0).all():
+            add(
+                "energy_axis",
+                "波长轴 + 光子能量副轴",
+                "medium",
+                f"{x} 为正的波长量，可加第二条上横轴按 E = 1239.84/λ 标注光子能量；"
+                "副轴只是同一数据的另一种单位，不增加信息",
+                {"x": x, "y": measured[:8] or line_ys[:8], "secondary_unit": "eV"},
+                3,
             )
 
     error_added = False

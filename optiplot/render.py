@@ -20,6 +20,10 @@ COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 # reference these ids.
 FIGURE_TYPES = (
     "spectrum_lines",
+    "spectral_difference",
+    "spectral_ratio",
+    "spectral_envelope",
+    "energy_axis",
     "scatter_fit",
     "density",
     "errorbar",
@@ -35,12 +39,44 @@ FIGURE_TYPES = (
 )
 
 
+# A difference crosses zero by construction, so a log axis there is meaningless;
+# the others are ratios or positive-valued spectra.
+LOG_AXIS_TYPES = (
+    "spectrum_lines",
+    "spectral_ratio",
+    "spectral_envelope",
+    "energy_axis",
+    "scatter_fit",
+    "density",
+    "errorbar",
+    "distribution",
+)
+
+
 def _finite(df, names):
     cols = list(dict.fromkeys(names))
     out = df[cols].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     if out.empty:
         raise ValueError("所选变量没有完整且有限的数值配对。")
     return out
+
+
+def _spectral_pair(df, e):
+    """Rows where the scan axis and exactly two response columns are all present.
+
+    The two columns are subtracted or divided row by row, so a shared grid is a
+    precondition, not a detail: nothing here resamples one series onto the other's
+    wavelengths.
+    """
+    xname = e["x"]
+    ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+    if len(ys) != 2:
+        raise ValueError("差值与比值图需要恰好两个响应列，当前给出 " + str(len(ys)) + " 个。")
+    d = df[[xname] + ys].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    d = d.dropna()
+    if len(d) < 2:
+        raise ValueError("两列在同一采样网格上没有足够的有效配对行。")
+    return d, xname, ys[0], ys[1]
 
 
 def _legend(ax, style, **overrides):
@@ -97,13 +133,7 @@ def render(profile, rec, output=None, options=None, style=None):
             ax.set_ylabel(opts["ylabel"])
         for axis in ["x", "y"]:
             if opts.get(axis + "log"):
-                if rec.id not in [
-                    "spectrum_lines",
-                    "scatter_fit",
-                    "density",
-                    "errorbar",
-                    "distribution",
-                ]:
+                if rec.id not in LOG_AXIS_TYPES:
                     raise ValueError("此图型不支持对数轴。")
                 mapped = enc.get(axis, enc.get("value") if kind_for_log(rec.id, axis) else None)
                 names = mapped if isinstance(mapped, list) else [mapped] if mapped else []
@@ -182,6 +212,108 @@ def _draw(ax, fig, df, kind, e, opts, style):
         ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
         if len(ys) > 1:
             _legend(ax, style)
+    elif kind in ["spectral_difference", "spectral_ratio"]:
+        d, xname, a, b = _spectral_pair(df, e)
+        if kind == "spectral_difference":
+            xvals = d[xname].to_numpy()
+            values = d[a].to_numpy() - d[b].to_numpy()
+            label = f"{a} − {b}"
+            reference = 0.0
+        else:
+            # A ratio at a vanishing denominator is an artefact of the division,
+            # not a measurement, so those rows are dropped and counted.
+            denominator = d[b].to_numpy()
+            valid = np.abs(denominator) > 1e-12 * max(np.abs(denominator).max(), 1e-30)
+            if not valid.any():
+                raise ValueError("分母列全部接近零，比值无定义。")
+            dropped = int((~valid).sum())
+            xvals = d[xname].to_numpy()[valid]
+            values = d[a].to_numpy()[valid] / denominator[valid]
+            label = f"{a} / {b}"
+            if dropped:
+                ax.set_title(
+                    f"{dropped} 行因分母接近零被屏蔽", fontsize=style.resolved_font_size() * 0.85
+                )
+            reference = 1.0
+        ax.plot(
+            xvals,
+            values,
+            color=palette[0 % len(palette)],
+            label=label,
+            **style.series_style(0),
+        )
+        ax.axhline(reference, color="#7A94AB", lw=0.9, ls="--", zorder=1)
+        ax.set(
+            xlabel=xname,
+            ylabel="Difference" if kind.endswith("difference") else "Ratio",
+        )
+        _legend(ax, style)
+    elif kind == "spectral_envelope":
+        xname = e["x"]
+        ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+        if len(ys) < 3:
+            raise ValueError("包络带需要至少 3 个响应列；两列请直接画曲线。")
+        d = df[[xname] + ys].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+        d = d.dropna()
+        if d.empty:
+            raise ValueError("这些列没有共同的完整行。")
+        block = d[ys].to_numpy()
+        low, high = block.min(axis=1), block.max(axis=1)
+        ax.fill_between(
+            d[xname].to_numpy(),
+            low,
+            high,
+            color=palette[0 % len(palette)],
+            alpha=style.fill_alpha,
+            label=f"min–max of {len(ys)} columns",
+        )
+        ax.plot(
+            d[xname].to_numpy(),
+            np.median(block, axis=1),
+            color=palette[0 % len(palette)],
+            label="median",
+            **style.series_style(0),
+        )
+        ax.set(xlabel=xname, ylabel="Response (range, not SD)")
+        _legend(ax, style)
+    elif kind == "energy_axis":
+        xname = e["x"]
+        ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+        if not 1 <= len(ys) <= 8:
+            raise ValueError("曲线请选择 1–8 个响应列。")
+        positive = True
+        for i, yname in enumerate(ys):
+            d = (
+                df[[xname, yname]]
+                .apply(pd.to_numeric, errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+            )
+            if (d[xname].dropna() <= 0).any():
+                positive = False
+            ax.plot(
+                d[xname],
+                d[yname],
+                color=palette[i % len(palette)],
+                label=yname,
+                **style.series_style(i),
+            )
+        ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
+        if len(ys) > 1:
+            _legend(ax, style)
+        if not positive:
+            raise ValueError("光子能量副轴要求波长全部为正。")
+        # E[eV] = hc/λ with hc = 1239.841984 eV·nm. Matplotlib probes the
+        # transform outside the data range, including at zero, so the converter
+        # is made total rather than suppressing the resulting warning.
+        def _nm_to_ev(lam):
+            arr = np.asarray(lam, dtype=float)
+            out = np.full(arr.shape, np.nan)
+            np.divide(1239.841984, arr, out=out, where=arr != 0)
+            return out.item() if out.ndim == 0 else out
+
+        ax.secondary_xaxis("top", functions=(_nm_to_ev, _nm_to_ev)).set_xlabel(
+            "photon energy / eV"
+        )
     elif kind in ["scatter_fit", "density"]:
         xname, yname = e["x"], e["y"]
         d = _finite(df, [xname, yname])
