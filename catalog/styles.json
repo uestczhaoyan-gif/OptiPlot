@@ -444,6 +444,33 @@
   "recipe": "先汇总真实与预测类别计数，再提供按行归一化选项；色标注明计数或比例。"
  },
  {
+  "id": "peak_annotation-01",
+  "label": "激光峰值波长与半高宽读数",
+  "patterns": [
+   "peak_annotation"
+  ],
+  "data_schema": "wavelength_nm, electroluminescence",
+  "recipe": "在曲线上标出峰位与半高宽；峰位来自三点抛物线插值，须在图注给出采样间隔，否则读者会按标注的小数位数判断精度。"
+ },
+ {
+  "id": "peak_annotation-02",
+  "label": "吸收峰的半高宽与本底",
+  "patterns": [
+   "peak_annotation"
+  ],
+  "data_schema": "wavelength_nm, absorbance",
+  "recipe": "半高宽以曲线两端点的本底为参考而不是零；本底有明显倾斜时先做局部基线扣除再标注，否则宽度会被斜率放大。"
+ },
+ {
+  "id": "peak_annotation-03",
+  "label": "共振 dip 与品质因数",
+  "patterns": [
+   "peak_annotation"
+  ],
+  "data_schema": "wavelength_nm, transmittance",
+  "recipe": "透射 dip 用向下三角标记，半高宽用于估算 Q 值；dip 落在扫描边界时不标注并在标题说明，否则会把仪器范围报成共振。"
+ },
+ {
   "id": "peak_evolution-01",
   "label": "变角度共振色散",
   "patterns": [

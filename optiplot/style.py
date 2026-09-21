@@ -46,6 +46,7 @@ GRID_STATES = ("off", "major", "minor", "both")
 AXIS_STYLED = frozenset(
     {
         "spectrum_lines",
+        "peak_annotation",
         "stacked_curves",
         "spectral_difference",
         "spectral_ratio",

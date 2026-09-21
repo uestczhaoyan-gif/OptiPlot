@@ -13,6 +13,19 @@ styles_path = here / "catalog" / "styles.json"
 styles = json.loads(styles_path.read_text(encoding="utf-8"))
 
 NEW = [
+    # --- peak_annotation ---
+    ("peak_annotation", "激光峰值波长与半高宽读数",
+     "wavelength_nm, electroluminescence",
+     "在曲线上标出峰位与半高宽；峰位来自三点抛物线插值，须在图注给出采样间隔，"
+     "否则读者会按标注的小数位数判断精度。"),
+    ("peak_annotation", "吸收峰的半高宽与本底",
+     "wavelength_nm, absorbance",
+     "半高宽以曲线两端点的本底为参考而不是零；本底有明显倾斜时先做局部基线扣除再标注，"
+     "否则宽度会被斜率放大。"),
+    ("peak_annotation", "共振 dip 与品质因数",
+     "wavelength_nm, transmittance",
+     "透射 dip 用向下三角标记，半高宽用于估算 Q 值；dip 落在扫描边界时不标注并在标题说明，"
+     "否则会把仪器范围报成共振。"),
     # --- stacked_curves (parameter-resolved families, drawn as an offset stack) ---
     ("stacked_curves", "变角度透射堆叠",
      "theta_deg, wavelength_nm, transmittance",

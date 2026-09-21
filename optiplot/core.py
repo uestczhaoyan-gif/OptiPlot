@@ -737,6 +737,27 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 enc,
                 6,
             )
+            # A labelled peak belongs to a single curve. Once a second scan axis
+            # splits the rows into a family, the per-curve peak is what
+            # peak_evolution reports, and labelling one here would put a marker
+            # on a zigzag through fifteen spectra.
+            if not group and not p.grid_like:
+                peaked = [
+                    c
+                    for c in line_ys
+                    if _has_interior_extremum(data[[x, c]].dropna().sort_values(x)[c])
+                ]
+                if peaked:
+                    add(
+                        "peak_annotation",
+                        "曲线与峰位标注",
+                        "high",
+                        f"{peaked[0]} 在扫描范围内存在内部极值，可标注峰位与半高宽；"
+                        "峰位由三点抛物线插值给出，半高宽以曲线端点本底为参考，"
+                        "两个半高交点任一落在扫描之外时不给宽度",
+                        {"x": x, "y": peaked[:4]},
+                        6,
+                    )
             # The same family stacked instead of overlaid. Offered only for one
             # response: eight columns times fifteen angles is a wall, not a plot.
             if group and len(line_ys) >= 1 and 2 <= data[group].dropna().nunique() <= 20:

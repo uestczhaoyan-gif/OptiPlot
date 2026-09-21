@@ -406,9 +406,13 @@ def test_peak_extraction_recovers_a_gaussian_centre_and_width():
     sigma = 25.0
     wave = np.linspace(1400.0, 1800.0, 201)
     value = np.exp(-((wave - 1580.0) ** 2) / (2 * sigma**2))
-    peak, width, is_max = _peak_and_fwhm(wave, value)
-    assert is_max and peak == pytest.approx(1580.0, abs=1.0)
-    assert width == pytest.approx(2.3548 * sigma, rel=0.02)
+    found = _peak_and_fwhm(wave, value)
+    assert found.is_max and found.position == pytest.approx(1580.0, abs=1.0)
+    assert found.width == pytest.approx(2.3548 * sigma, rel=0.02)
+    assert found.value == pytest.approx(1.0, abs=0.01)
+    # the crossings travel with the number so a caller can draw the width
+    assert found.left < found.position < found.right
+    assert found.right - found.left == pytest.approx(found.width, rel=1e-9)
 
 
 def test_a_dip_is_not_confused_with_the_noise_floor_of_a_flat_curve():
@@ -419,10 +423,10 @@ def test_a_dip_is_not_confused_with_the_noise_floor_of_a_flat_curve():
     wave = np.linspace(1300.0, 1800.0, 41)
     value = 1.0 - 0.62 * np.exp(-((wave - 1600.0) ** 2) / (2 * 55.0**2))
     value += np.sin(wave * 12.9898) * 0.004  # deterministic pseudo-noise
-    peak, width, is_max = _peak_and_fwhm(wave, value)
-    assert is_max is False
-    assert peak == pytest.approx(1600.0, abs=6.0)
-    assert width == pytest.approx(2.3548 * 55.0, rel=0.05)
+    found = _peak_and_fwhm(wave, value)
+    assert found.is_max is False
+    assert found.position == pytest.approx(1600.0, abs=6.0)
+    assert found.width == pytest.approx(2.3548 * 55.0, rel=0.05)
 
 
 def test_peak_on_the_scan_edge_is_reported_as_no_peak():
@@ -431,8 +435,9 @@ def test_peak_on_the_scan_edge_is_reported_as_no_peak():
     from optiplot.render import _peak_and_fwhm
 
     wave = np.linspace(1400.0, 1800.0, 60)
-    peak, width, is_max = _peak_and_fwhm(wave, wave.copy())
-    assert np.isnan(peak) and np.isnan(width) and is_max is None
+    found = _peak_and_fwhm(wave, wave.copy())
+    assert not found.found
+    assert np.isnan(found.position) and np.isnan(found.width) and found.is_max is None
 
 
 def test_peak_evolution_tracks_the_blue_shift():
@@ -483,6 +488,39 @@ def test_stacked_curves_lift_each_curve_clear_of_the_last():
     assert len(render(p, r, style=Style(stack_fill=False)).axes[0].collections) == 0
     wide = render(p, r, style=Style(stack_offset=3.0)).axes[0]
     assert wide.get_ylim()[1] > ax.get_ylim()[1], "stack_offset changed nothing"
+
+
+def test_peak_annotation_labels_the_turning_point_it_found():
+    p = analyze_file(ROOT / "examples" / "sample_spectrum.csv")
+    r = next(x for x in recommend(p) if x.id == "peak_annotation")
+    ax = render(p, r).axes[0]
+    curves = [l for l in ax.lines if len(l.get_xdata()) > 5]
+    spans = [l for l in ax.lines if len(l.get_xdata()) == 2]
+    markers = [l for l in ax.lines if len(l.get_xdata()) == 1]
+    assert len(curves) == 3 and len(markers) == 3, "a curve was marked or missed"
+    assert len(spans) == 3, "each peak's half-maximum span should be drawn"
+    texts = [t.get_text() for t in ax.texts]
+    assert len(texts) == 3 and all("FWHM" in t for t in texts)
+    ceilings = [float(np.nanmax(l.get_ydata())) for l in curves]
+    for marker in markers:
+        # the marker has to sit on some curve's turning point, not near one
+        assert min(abs(marker.get_ydata()[0] - top) for top in ceilings) < 0.05
+        assert np.isfinite(marker.get_xdata()[0])
+
+
+def test_a_curve_without_an_interior_peak_gets_no_annotation():
+    """A monotonic rise to the last wavelength is a truncated scan; labelling its
+    endpoint would report the instrument's range as a resonance."""
+    p = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "wavelength_nm": np.linspace(1200.0, 1600.0, 40),
+                "absorbance": np.linspace(0.02, 0.9, 40),
+            }
+        )
+    )
+    assert "peak_annotation" not in {r.id for r in recommend(p)}
+    assert "spectrum_lines" in {r.id for r in recommend(p)}
 
 
 def test_dual_axis_gives_each_series_its_own_scale():

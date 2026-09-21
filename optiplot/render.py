@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import math
+from typing import NamedTuple
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -20,6 +21,7 @@ COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 # reference these ids.
 FIGURE_TYPES = (
     "spectrum_lines",
+    "peak_annotation",
     "stacked_curves",
     "spectral_difference",
     "spectral_ratio",
@@ -47,6 +49,7 @@ FIGURE_TYPES = (
 # the others are ratios or positive-valued spectra.
 LOG_AXIS_TYPES = (
     "spectrum_lines",
+    "peak_annotation",
     "spectral_ratio",
     "spectral_envelope",
     "energy_axis",
@@ -120,20 +123,45 @@ def _group_colours(style, n: int) -> list:
     return [cmap(x) for x in np.linspace(0.05, 0.95, n)]
 
 
-def _peak_and_fwhm(wave, value):
+class Peak(NamedTuple):
+    """An interior turning point, its half-maximum width and where the width was
+    measured.
+
+    `left` and `right` travel with the number so a caller can draw the width
+    rather than only print it, and a reader can see which two crossings the
+    FWHM came from.
+    """
+
+    position: float
+    value: float
+    width: float
+    is_max: bool | None
+    level: float
+    left: float
+    right: float
+
+    @property
+    def found(self) -> bool:
+        return np.isfinite(self.position)
+
+
+NO_PEAK = Peak(np.nan, np.nan, np.nan, None, np.nan, np.nan, np.nan)
+
+
+def _peak_and_fwhm(wave, value) -> Peak:
     """Locate the interior extremum of a curve and its full width at half maximum.
 
-    Returns (position, width, is_maximum) with NaNs when the curve has no
-    interior turning point. The half-maximum is measured against the higher of
-    the two curve endpoints rather than zero, because a reflectance dip sitting
-    on a pedestal of 0.9 is not 90% deep.
+    Returns NaNs in `position` when the curve has no interior turning point. The
+    half-maximum is measured against the higher of the two curve endpoints rather
+    than zero, because a reflectance dip sitting on a pedestal of 0.9 is not 90%
+    deep.
     """
     wave = np.asarray(wave, dtype=float)
     value = np.asarray(value, dtype=float)
     order = np.argsort(wave)
     wave, value = wave[order], value[order]
     if wave.size < 5:
-        return np.nan, np.nan, None
+        return NO_PEAK
     i_max, i_min = int(np.nanargmax(value)), int(np.nanargmin(value))
     # Both turning points are candidates and the deeper one wins. Preferring the
     # maximum outright lets a reflectance dip be reported at the tallest noise
@@ -145,7 +173,7 @@ def _peak_and_fwhm(wave, value):
     if 0 < i_min < wave.size - 1 and value[i_min] < min(value[0], value[-1]):
         candidates.append((min(value[0], value[-1]) - value[i_min], i_min, False))
     if not candidates:
-        return np.nan, np.nan, None
+        return NO_PEAK
     excursion, idx, is_max = max(candidates)
     amplitude = value[idx]
     pedestal = max(value[0], value[-1]) if is_max else min(value[0], value[-1])
@@ -162,32 +190,47 @@ def _peak_and_fwhm(wave, value):
     left = crossing(range(idx - 1, -1, -1))
     right = crossing(range(idx, wave.size - 1))
     width = right - left if np.isfinite(left) and np.isfinite(right) else np.nan
-    return _refine(wave, value, idx, is_max), width, is_max
+    position, height = _refine(wave, value, idx, is_max)
+    return Peak(position, height, width, is_max, float(half), float(left), float(right))
 
 
 def _refine(wave, value, idx, is_max):
-    """Sub-sample extremum position from the parabola through the peak and its
-    two neighbours.
+    """Sub-sample extremum position and height from the parabola through the peak
+    and its two neighbours.
 
     The nearest sample can be a whole grid step away from the true resonance, so
     an angle-resolved track would otherwise advance in flat stair-steps and a
     peak 8 nm from its neighbour would read as unmoved.
     """
     if idx < 1 or idx >= wave.size - 1:
-        return wave[idx]
+        return wave[idx], value[idx]
     x = wave[idx - 1 : idx + 2]
     y = value[idx - 1 : idx + 2]
     if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)) or len(set(x)) < 3:
-        return wave[idx]
-    a, b, _ = np.polyfit(x - x[1], y, 2)
+        return wave[idx], value[idx]
+    a, b, c = np.polyfit(x - x[1], y, 2)
     if a == 0 or (a > 0) != (not is_max):
-        return wave[idx]
+        return wave[idx], value[idx]
     offset = -b / (2 * a)
-    return float(x[1] + offset) if x[0] <= x[1] + offset <= x[2] else wave[idx]
+    if not x[0] <= x[1] + offset <= x[2]:
+        return wave[idx], value[idx]
+    return float(x[1] + offset), float(c - b * b / (4 * a))
 
 
 def kind_for_log(kind, axis):
     return kind == "distribution" and axis == "x"
+
+
+def _peak_label(xname: str, peak: Peak) -> str:
+    """Two lines at most: where the turning point is, and how wide it is.
+
+    The width is dropped when either half-maximum crossing falls outside the
+    scan, because a truncated width is not a measurement of anything.
+    """
+    lines = [f"{xname} = {peak.position:.6g}"]
+    if np.isfinite(peak.width):
+        lines.append(f"FWHM = {peak.width:.4g}")
+    return "\n".join(lines)
 
 
 def render(profile, rec, output=None, options=None, style=None):
@@ -303,6 +346,73 @@ def _draw(ax, fig, df, kind, e, opts, style):
         ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
         if len(ys) > 1:
             _legend(ax, style)
+    elif kind == "peak_annotation":
+        xname = e["x"]
+        ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+        if not 1 <= len(ys) <= 4:
+            raise ValueError("峰位标注请选择 1–4 个响应列，再多标注会互相压住。")
+        unlabelled = 0
+        for i, yname in enumerate(ys):
+            d = (
+                df[[xname, yname]]
+                .apply(pd.to_numeric, errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+            )
+            colour = palette[i % len(palette)]
+            # The drawn curve keeps its gaps; only the peak search runs on finite
+            # rows, because bridging a missing stretch could place a resonance in
+            # a region the instrument never sampled.
+            ax.plot(
+                d[xname],
+                d[yname],
+                color=colour,
+                label=yname,
+                drawstyle="steps-mid" if style.step else "default",
+                **style.series_style(i),
+            )
+            found = _peak_and_fwhm(d[xname].to_numpy(), d[yname].to_numpy())
+            if not found.found:
+                unlabelled += 1
+                continue
+            ax.plot(
+                [found.position],
+                [found.value],
+                marker="o" if found.is_max else "v",
+                markersize=max(4.5, float(style.marker_size)),
+                color=colour,
+                markeredgecolor=colour,
+                zorder=max(int(style.series_zorder) + 2, 4),
+            )
+            if np.isfinite(found.left) and np.isfinite(found.right):
+                ax.plot(
+                    [found.left, found.right],
+                    [found.level, found.level],
+                    color=colour,
+                    linestyle=(0, (4, 3)),
+                    linewidth=max(0.6, float(style.line_width) * 0.6),
+                )
+            ax.annotate(
+                _peak_label(xname, found),
+                xy=(found.position, found.value),
+                xytext=(7, 7 if found.is_max else -24),
+                textcoords="offset points",
+                fontsize=style.resolved_font_size(),
+                color=colour,
+                # The label has to survive crossing another curve's flank, and
+                # plain text over a line is unreadable in print.
+                bbox=dict(
+                    boxstyle="round,pad=0.15",
+                    facecolor=style.axes_facecolor,
+                    edgecolor="none",
+                    alpha=0.8,
+                ),
+            )
+        if unlabelled:
+            ax.set_title(
+                f"{unlabelled} 条曲线在扫描范围内没有内部极值，未标注峰位", pad=10, loc="left"
+            )
+        ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
+        _legend(ax, style)
     elif kind == "stacked_curves":
         xname, group = e["x"], e["group"]
         yname = (e["y"] if isinstance(e["y"], list) else [e["y"]])[0]
@@ -512,12 +622,12 @@ def _draw(ax, fig, df, kind, e, opts, style):
             raise ValueError("没有可用于提取峰位的完整三元组。")
         positions, widths, skipped = [], [], 0
         for level, group in rows.groupby(param, sort=True):
-            peak, width, _ = _peak_and_fwhm(group[wave].to_numpy(), group[value].to_numpy())
-            if not np.isfinite(peak):
+            found = _peak_and_fwhm(group[wave].to_numpy(), group[value].to_numpy())
+            if not found.found:
                 skipped += 1
                 continue
-            positions.append((float(level), float(peak)))
-            widths.append((float(level), float(width) if np.isfinite(width) else np.nan))
+            positions.append((float(level), float(found.position)))
+            widths.append((float(level), float(found.width) if np.isfinite(found.width) else np.nan))
         if len(positions) < 2:
             raise ValueError(
                 f"只有 {len(positions)} 个 {param} 取值存在内部极值，无法构成演化曲线；"
