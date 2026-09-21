@@ -148,6 +148,16 @@ STYLE_PRESETS = {
 }
 
 
+def _validate_colour(value: str, name: str) -> None:
+    """Face colours accept anything Matplotlib understands - named colours,
+    grey levels, "none" - so the strict #RRGGBB rule for palette entries does
+    not apply here."""
+    from matplotlib.colors import is_color_like
+
+    if str(value).lower() not in ("none", "auto", "inherit") and not is_color_like(value):
+        raise ValueError(f"{name} 不是合法颜色：{value!r}")
+
+
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
     """Strict #RRGGBB. A 3-digit shorthand or a bare hex run is rejected with a
     clear message rather than being guessed at."""
@@ -158,6 +168,11 @@ def _hex_to_rgb(value: str) -> tuple[int, int, int]:
     if any(ch not in "0123456789abcdefABCDEF" for ch in digits):
         raise ValueError(f"颜色含非十六进制字符：{value!r}")
     return tuple(int(digits[i : i + 2], 16) for i in (0, 2, 4))
+
+
+LAYOUTS = ("constrained", "tight", "none")
+EXPORT_FORMATS = (".png", ".svg", ".pdf", ".tif", ".tiff")
+MM_PER_INCH = 25.4
 
 
 @dataclass(frozen=True)
@@ -185,6 +200,16 @@ class Style:
     tick_pad: float = 4.0
     # B canvas (started; margins and aspect follow)
     size: str = "preview"
+    width_mm: float | None = None
+    height_mm: float | None = None
+    aspect_lock: float | None = None
+    layout: str = "constrained"
+    figure_facecolor: str = "white"
+    axes_facecolor: str = "white"
+    margin_left: float | None = None
+    margin_right: float | None = None
+    margin_top: float | None = None
+    margin_bottom: float | None = None
     # C axes
     spines: str = "left+bottom"
     spine_width: float = 0.7
@@ -409,10 +434,58 @@ class Style:
             )
         if not 0.0 <= float(self.pad_inches) <= 2.0:
             raise ValueError(f"pad_inches 需在 0–2 之间，当前 {self.pad_inches}")
+        if self.layout not in LAYOUTS:
+            raise ValueError(f"layout 需是 {'/'.join(LAYOUTS)} 之一，当前 {self.layout!r}")
+        for name in ("width_mm", "height_mm"):
+            value = getattr(self, name)
+            if value is not None and not 10.0 <= float(value) <= 2000.0:
+                raise ValueError(f"{name} 需在 10–2000 mm 之间，当前 {value}")
+        if self.aspect_lock is not None and not 0.1 <= float(self.aspect_lock) <= 10.0:
+            raise ValueError(f"aspect_lock 需在 0.1–10 之间（宽/高），当前 {self.aspect_lock}")
+        if self.aspect_lock is not None and self.width_mm is not None and self.height_mm is not None:
+            raise ValueError(
+                "aspect_lock 与同时给定的 width_mm + height_mm 冲突："
+                "两个维度已经锁定了比例"
+            )
+        for name in ("figure_facecolor", "axes_facecolor"):
+            _validate_colour(getattr(self, name), name)
+        if self.has_custom_margins():
+            # constrained and tight layouts compute the subplot box themselves and
+            # discard anything set here, so honouring it would be a silent no-op.
+            if self.layout != "none":
+                raise ValueError(
+                    "自定义留白需要 layout=\"none\"：constrained 与 tight 会自行计算"
+                    "子图位置并丢弃 margin_* 的设定"
+                )
+            for side in ("left", "right", "top", "bottom"):
+                value = getattr(self, f"margin_{side}")
+                if value is not None and not 0.0 <= float(value) <= 0.9:
+                    raise ValueError(f"margin_{side} 需在 0–0.9 之间（占画布比例），当前 {value}")
+            if self.tight_bbox:
+                raise ValueError(
+                    "tight_bbox 与自定义留白冲突：紧裁会重新贴合内容，抹掉 margin_*"
+                )
         return self
 
     def size_inches(self) -> tuple[float, float]:
-        return SIZES[self.size]
+        """Millimetres win over the named preset, because that is the unit a
+        journal's author guide is written in."""
+        if self.width_mm is None and self.height_mm is None:
+            return SIZES[self.size]
+        base_w, base_h = SIZES[self.size]
+        if self.width_mm is not None and self.height_mm is not None:
+            return float(self.width_mm) / MM_PER_INCH, float(self.height_mm) / MM_PER_INCH
+        if self.width_mm is not None:
+            width = float(self.width_mm) / MM_PER_INCH
+            return width, width / (self.aspect_lock or base_w / base_h)
+        height = float(self.height_mm) / MM_PER_INCH
+        return height * (self.aspect_lock or base_w / base_h), height
+
+    def has_custom_margins(self) -> bool:
+        return any(
+            getattr(self, f"margin_{side}") is not None
+            for side in ("left", "right", "top", "bottom")
+        )
 
     def resolved_font_size(self) -> float:
         """Explicit pt wins; otherwise the canvas preset picks it."""
@@ -488,6 +561,8 @@ class Style:
             "xtick.minor.visible": self.tick_minor,
             "ytick.minor.visible": self.tick_minor,
             "axes.axisbelow": self.grid_under_data,
+            "axes.facecolor": self.axes_facecolor,
+            "figure.facecolor": self.figure_facecolor,
             "legend.loc": LEGEND_PARAM_DEFAULT if self.legend == "none" else self.legend,
             # There is no legend.ncols rcParam; column count is passed to
             # ax.legend() per call. See Style.legend_kwargs().
@@ -501,7 +576,7 @@ class Style:
             "legend.columnspacing": self.legend_column_spacing,
             "legend.borderpad": self.legend_border_padding,
             "legend.title_fontsize": self.legend_title_size,
-            "savefig.facecolor": "none" if self.transparent else "white",
+            "savefig.facecolor": "none" if self.transparent else self.figure_facecolor,
             # Vector text stays editable in Illustrator unless the caller asks
             # for paths; both matter for journal submission.
             "svg.fonttype": "path" if self.svg_text_as_paths else "none",
@@ -509,7 +584,12 @@ class Style:
         }
 
     def figure_kwargs(self) -> dict:
-        return {"facecolor": "white", "layout": "constrained"}
+        kwargs = {"facecolor": self.figure_facecolor}
+        # "tight" is applied at savefig, not at construction; only constrained is
+        # a Figure(layout=...) value.
+        if self.layout == "constrained":
+            kwargs["layout"] = "constrained"
+        return kwargs
 
     def savefig_kwargs(self, dpi: int | None = None) -> dict:
         """`dpi` is only an override for callers that have no Style of their
@@ -587,6 +667,26 @@ class Style:
             "elinewidth": self.error_line_width or self.line_width,
             "zorder": self.series_zorder,
         }
+
+    def apply_margins(self, fig) -> None:
+        """Explicit subplot box, honoured only under layout="none".
+
+        Kept separate from configure_axes because the canvas box belongs to the
+        figure and applies to every figure type, whereas axis styling is
+        restricted to the numeric-frame types.
+        """
+        if self.layout != "none":
+            return
+        left = self.margin_left if self.margin_left is not None else 0.125
+        right = (
+            1.0 - self.margin_right
+            if self.margin_right is not None
+            else 1.0 - 0.1
+        )
+        top = 1.0 - self.margin_top if self.margin_top is not None else 0.88
+        bottom = self.margin_bottom if self.margin_bottom is not None else 0.11
+        for ax in fig.axes:
+            ax.set_position([left, bottom, max(right - left, 0.05), max(top - bottom, 0.05)])
 
     def configure_axes(self, ax, kind: str) -> None:
         """Per-Axes settings that rcParams cannot express: locators, formatters,

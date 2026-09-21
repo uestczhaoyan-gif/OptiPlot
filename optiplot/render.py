@@ -10,9 +10,9 @@ from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
 try:  # normal import, as part of the optiplot package
-    from .style import Style
+    from .style import EXPORT_FORMATS, Style
 except ImportError:  # standalone copy inside an exported reproducible bundle
-    from style import Style
+    from style import EXPORT_FORMATS, Style
 
 COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 # The authoritative list of drawable figure types. A new branch in _draw is not
@@ -120,12 +120,18 @@ def render(profile, rec, output=None, options=None, style=None):
         # After the log scales exist: the tick formatter needs to know a log axis
         # is present so it does not print exponents as fixed decimals.
         style.configure_axes(ax, rec.id)
+        style.apply_margins(fig)
         fig.optiplot_encodings = enc
         style.bake_into(fig)
         if output:
             out = Path(output)
-            if out.suffix.lower() not in [".png", ".svg", ".pdf"]:
-                raise ValueError("导出格式必须是 PNG / SVG / PDF。")
+            if out.suffix.lower() not in EXPORT_FORMATS:
+                raise ValueError(
+                    "导出格式必须是 " + " / ".join(
+                        f.upper() for f in (".png", ".svg", ".pdf", ".tiff")
+                    )
+                    + f"。当前是 {out.suffix!r}。"
+                )
             fig.savefig(out, **style.savefig_kwargs())
         return fig
 

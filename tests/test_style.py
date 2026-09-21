@@ -878,6 +878,125 @@ def test_bundle_carries_the_full_style_and_replays_it(tmp_path):
         assert "style.py" in z.namelist(), "the bundle must ship Style itself"
 
 
+# ── B canvas: custom size, aspect, layout, margins, background ────
+
+
+def test_millimetres_override_the_named_preset():
+    """Author guides specify mm, so that unit has to win."""
+    w, h = Style(width_mm=88.9, height_mm=60.0).size_inches()
+    assert w == pytest.approx(88.9 / 25.4)
+    assert h == pytest.approx(60.0 / 25.4)
+
+
+def test_one_dimension_alone_keeps_the_preset_ratio():
+    style = Style(size="double", width_mm=88.9)
+    w, h = style.size_inches()
+    base_w, base_h = SIZES["double"]
+    assert w == pytest.approx(88.9 / 25.4)
+    assert h == pytest.approx(w * base_h / base_w)
+
+
+def test_aspect_lock_replaces_the_preset_ratio():
+    w, h = Style(size="double", width_mm=100.0, aspect_lock=2.0).size_inches()
+    assert w == pytest.approx(h * 2.0)
+
+
+def test_aspect_lock_conflicts_with_two_explicit_dimensions():
+    with pytest.raises(ValueError, match="aspect_lock"):
+        Style(width_mm=100.0, height_mm=50.0, aspect_lock=2.0).validate()
+
+
+def test_custom_size_reaches_the_figure():
+    fig = render(profile(), recommend(profile())[0], style=Style(width_mm=127.0, height_mm=76.2))
+    assert fig.get_size_inches()[0] == pytest.approx(5.0)
+    assert fig.get_size_inches()[1] == pytest.approx(3.0)
+
+
+def test_margins_need_layout_none_because_other_layouts_discard_them():
+    """constrained and tight compute the subplot box themselves; accepting
+    margin_* under them would be a silent no-op."""
+    with pytest.raises(ValueError, match='layout="none"'):
+        Style(margin_left=0.2).validate()
+    with pytest.raises(ValueError, match='layout="none"'):
+        Style(layout="tight", margin_bottom=0.3).validate()
+    Style(layout="none", margin_left=0.2)  # accepted
+
+
+def test_margins_conflict_with_tight_bbox():
+    with pytest.raises(ValueError, match="tight_bbox"):
+        Style(layout="none", margin_left=0.3, tight_bbox=True).validate()
+
+
+def test_margins_move_the_axes_box():
+    tight = render(
+        profile(), recommend(profile())[0], style=Style(layout="none", margin_left=0.05)
+    ).axes[0].get_position().x0
+    wide = render(
+        profile(), recommend(profile())[0], style=Style(layout="none", margin_left=0.45)
+    ).axes[0].get_position().x0
+    assert wide > tight + 0.3
+
+
+def test_layout_constrained_is_the_default_and_can_be_turned_off():
+    assert "layout" in Style().figure_kwargs()
+    assert "layout" not in Style(layout="none").figure_kwargs()
+    assert "layout" not in Style(layout="tight").figure_kwargs()
+
+
+def test_face_colours_reach_the_context():
+    rc = Style(figure_facecolor="#EFEFEF", axes_facecolor="none").rc_params()
+    assert rc["figure.facecolor"] == "#EFEFEF"
+    assert rc["axes.facecolor"] == "none"
+
+
+def test_bad_face_colour_is_rejected():
+    with pytest.raises(ValueError, match="颜色"):
+        Style(axes_facecolor="notacolor").validate()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"width_mm": 3},
+        {"height_mm": 5000},
+        {"aspect_lock": 0},
+        {"layout": "magic"},
+        {"layout": "none", "margin_left": 2.0},
+    ],
+)
+def test_bad_canvas_values_are_rejected(bad):
+    with pytest.raises(ValueError):
+        Style(**bad).validate()
+
+
+# ── H export: formats ──────────────────────────────────────────────
+
+
+def test_tiff_is_exportable(tmp_path):
+    from PIL import Image
+
+    target = tmp_path / "figure.tiff"
+    render(profile(), recommend(profile())[0], target, style=Style(dpi=120))
+    assert target.exists()
+    assert Image.open(target).size[0] > 300
+
+
+def test_unknown_extension_names_what_is_available(tmp_path):
+    with pytest.raises(ValueError, match="TIFF"):
+        render(profile(), recommend(profile())[0], tmp_path / "figure.eps")
+
+
+def test_every_offered_format_actually_writes_a_file(tmp_path):
+    """The standing rule for option lists: draw/write with every value, do not
+    just assert the name is in the list."""
+    from optiplot.style import EXPORT_FORMATS
+
+    for suffix in EXPORT_FORMATS:
+        target = tmp_path / f"figure{suffix}"
+        render(profile(), recommend(profile())[0], target, style=Style(dpi=72))
+        assert target.exists() and target.stat().st_size > 500, f"{suffix} wrote nothing"
+
+
 @pytest.mark.parametrize(
     "bad",
     [

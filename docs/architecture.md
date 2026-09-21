@@ -22,7 +22,7 @@ flowchart LR
 | 文件 | 职责 |
 |---|---|
 | `optiplot/core.py` | 导入、验证、物理变量名称启发式、推荐条件与等级。`analyze_dataframe` 不修改调用者的 DataFrame |
-| `optiplot/style.py` | 样式参数的唯一所有者。`Style` 是不可变 dataclass，负责把参数路由到 Matplotlib 的六个应用点：`rc_params()`（绘制期继承）、`figure_kwargs()`（Figure 构造）、`bake_into()`（逐 artist，字体族）、`configure_axes()`（逐 Axes：定位器、格式化器、范围、网格）、`legend_kwargs()`（逐次 `ax.legend()` 调用，因为 `legend.ncols` 不是 rcParam）、`savefig_kwargs()`（导出）。`from_options()` 把一次传入的扁平 dict 拆成「样式」与「数据内容」两半，未知键直接报错。`AXIS_STYLED` 限定哪些图型可以套用轴样式 |
+| `optiplot/style.py` | 样式参数的唯一所有者。`Style` 是不可变 dataclass，负责把参数路由到 Matplotlib 的六个应用点：`rc_params()`（绘制期继承）、`figure_kwargs()`（Figure 构造）、`bake_into()`（逐 artist，字体族）、`configure_axes()`（逐 Axes：定位器、格式化器、范围、网格）、`apply_margins()`（逐 Axes 子图位置，仅 `layout="none"`）、`legend_kwargs()` 与 `series_style()` / `errorbar_kwargs()`（逐 artist 参数，因为 `legend.ncols` 等没有 rcParam）、`savefig_kwargs()`（导出）。共 97 个字段。`from_options()` 把一次传入的扁平 dict 拆成「样式」与「数据内容」两半，未知键直接报错。`AXIS_STYLED` 限定哪些图型可以套用轴样式 |
 | `optiplot/render.py` | 确定性 Matplotlib 渲染器。`FIGURE_TYPES` 是图型 ID 的权威列表；样式参数走 `Style`；每种图显式消耗 `Recommendation.encodings` |
 | `optiplot/export.py` | 完整表格、配方与数据校验、独立渲染脚本、版本及图片打包 |
 | `optiplot/cli.py` | 批量导出接口 |
