@@ -14,7 +14,9 @@ import pandas as pd
 import pytest
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from optiplot import analyze_dataframe, analyze_file, recommend
+import zipfile
 from optiplot.render import render
+from optiplot.export import export_bundle
 from optiplot.style import Style, SIZES, PRESET_FONT, DATA_KEYS, MARKERS, MARKER_FILLS, SHADINGS, installed_families
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -693,6 +695,152 @@ def test_series_knobs_change_the_rendered_pixels():
         {"series_alpha": 0.3},
     ):
         assert digest(**kw) != base, f"{kw} changed nothing"
+
+
+# ── H export ───────────────────────────────────────────────────────
+
+
+def export(tmp_path, **style_values):
+    """Go through the real path: render(output=...) is what applies
+    savefig_kwargs, so calling fig.savefig by hand would test nothing."""
+    p = profile()
+    rec = recommend(p)[0]
+    suffix = "svg" if style_values.pop("as_svg", False) else "png"
+    target = tmp_path / f"figure.{suffix}"
+    render(p, rec, target, style=Style(**style_values))
+    return target.read_bytes()
+
+
+def test_export_dpi_sets_the_pixel_dimensions(tmp_path):
+    from PIL import Image
+
+    small = Image.open(io.BytesIO(export(tmp_path, dpi=80)))
+    big = Image.open(io.BytesIO(export(tmp_path, dpi=320)))
+    assert big.size[0] > small.size[0] * 3
+
+
+def test_preview_dpi_does_not_leak_into_the_export(tmp_path):
+    """The on-screen figure renders cheaply; the file must still be 600 dpi."""
+    from PIL import Image
+
+    p = profile()
+    assert render(p, recommend(p)[0], style=Style(preview_dpi=72, dpi=600)).dpi == 72
+    file_dpi = Image.open(io.BytesIO(export(tmp_path, preview_dpi=72, dpi=600))).info["dpi"]
+    assert round(file_dpi[0]) == 600
+
+
+def test_transparent_background_adds_an_alpha_channel(tmp_path):
+    from PIL import Image
+
+    # Agg writes RGBA PNGs either way, so the observable difference is whether
+    # the background pixels are actually opaque.
+    opaque = Image.open(io.BytesIO(export(tmp_path))).convert("RGBA").getpixel((1, 1))
+    clear = Image.open(io.BytesIO(export(tmp_path, transparent=True))).convert("RGBA").getpixel((1, 1))
+    assert opaque[3] == 255 and opaque[:3] == (255, 255, 255)
+    assert clear[3] == 0, f"transparent export kept an opaque corner: {clear}"
+
+
+def test_tight_bbox_and_pad_change_the_canvas_size(tmp_path):
+    from PIL import Image
+
+    loose = Image.open(io.BytesIO(export(tmp_path, pad_inches=1.0))).size
+    tight = Image.open(io.BytesIO(export(tmp_path, tight_bbox=True, pad_inches=0.01))).size
+    assert tight[0] < loose[0]
+
+
+def test_svg_text_mode_controls_editability(tmp_path):
+    """`none` keeps axis labels as real text in Illustrator; `path` outlines them."""
+    assert b"<text" in export(tmp_path, as_svg=True, svg_text_as_paths=False)
+    assert b"<text" not in export(tmp_path, as_svg=True, svg_text_as_paths=True)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"dpi": 10},
+        {"dpi": 99999},
+        {"preview_dpi": 10},
+        {"preview_dpi": 5000},
+        {"pad_inches": -1},
+        {"preview_dpi": 600, "dpi": 100},
+    ],
+)
+def test_bad_export_values_are_rejected(bad):
+    with pytest.raises(ValueError):
+        Style(**bad).validate()
+
+
+# ── I presets ──────────────────────────────────────────────────────
+
+
+def test_every_named_preset_survives_a_full_draw():
+    """Same rule as every other option list: a preset that only fails at draw
+    time is discovered by the person who picks it, not by a unit test that just
+    constructs it."""
+    from optiplot.style import STYLE_PRESETS
+
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    for name in STYLE_PRESETS:
+        for rec in recommend(p):
+            style = Style.from_preset(name)
+            ax = render(p, rec, style=style).axes[0]
+            FigureCanvasAgg(ax.figure)
+            ax.figure.canvas.draw()
+            assert ax is not None, f"preset {name} failed on {rec.id}"
+
+
+def test_preset_overrides_apply_on_top():
+    assert Style.from_preset("journal", line_width=8.0).line_width == 8.0
+    assert Style.from_preset("journal").line_width == 1.2
+
+
+def test_unknown_preset_is_rejected_with_a_suggestion():
+    with pytest.raises(ValueError, match="journal"):
+        Style.from_preset("jornal")
+
+
+def test_preset_file_round_trips(tmp_path):
+    path = tmp_path / "house.json"
+    original = Style(family="serif", cjk="none", line_width=2.2, dpi=600, grid="major")
+    assert original.save_preset(path) == path
+    assert Style.load_preset(path) == original
+
+
+def test_preset_file_is_plain_json_a_person_can_edit(tmp_path):
+    path = tmp_path / "house.json"
+    Style().save_preset(path)
+    text = path.read_text(encoding="utf-8")
+    assert text.lstrip().startswith("{")
+    assert json.loads(text)["line_width"] == 1.65
+
+
+@pytest.mark.parametrize("content", ['["not", "an", "object"]', '{ broken', '{"nope": 1}'])
+def test_bad_preset_files_are_rejected(tmp_path, content):
+    path = tmp_path / "bad.json"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError):
+        Style.load_preset(path)
+
+
+def test_missing_preset_file_says_so(tmp_path):
+    with pytest.raises(ValueError, match="找不到"):
+        Style.load_preset(tmp_path / "absent.json")
+
+
+def test_bundle_carries_the_full_style_and_replays_it(tmp_path):
+    """A replay must not depend on which defaults the installed version ships,
+    so the recipe records every resolved field, not just what was passed in."""
+    p = analyze_file(ROOT / "examples" / "sample_spectrum.csv")
+    rec = recommend(p)[0]
+    target = tmp_path / "bundle.zip"
+    export_bundle(p, rec, target, options={"size": "single", "line_width": 3.0})
+    with zipfile.ZipFile(target) as z:
+        recipe = json.loads(z.read("recipe.json"))
+        assert recipe["style"]["line_width"] == 3.0
+        # untouched fields are recorded too, at their resolved values
+        assert recipe["style"]["family"] == "sans"
+        assert set(json.loads(z.read("style.json"))) == set(recipe["style"])
+        assert "style.py" in z.namelist(), "the bundle must ship Style itself"
 
 
 @pytest.mark.parametrize(

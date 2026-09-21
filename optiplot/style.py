@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields, asdict, replace
 import difflib
+import json
+from pathlib import Path
 
 from matplotlib import font_manager
 
@@ -63,7 +65,6 @@ DATA_KEYS = frozenset(
         "ylabel",
         "xlog",
         "ylog",
-        "dpi",
     }
 )
 # Multipliers, not absolute points: raising the base size should move every
@@ -123,6 +124,28 @@ MARKERS = (
     "none", "o", "s", "^", "v", "<", ">", "D", "d", "p", "h", "+", "x", ".", ",",
     "*", "1", "2", "3", "4", "|", "_",
 )
+# Named cross-group combinations. A preset is worth having only when it moves
+# several groups together coherently - canvas plus base size plus line weight
+# plus legend - otherwise it is just `size` under another name.
+STYLE_PRESETS = {
+    "default": {},
+    "journal": {
+        "size": "double", "font_size": 9.0, "line_width": 1.2, "spines": "all",
+        "tick_length": 3.0, "tick_minor": True, "legend_frame": False,
+        "marker_size": 4.0, "scatter_size": 12.0, "dpi": 600, "pad_inches": 0.02,
+        "tight_bbox": True,
+    },
+    "slide": {
+        "size": "slide", "font_size": 17.0, "line_width": 3.0, "grid": "major",
+        "grid_alpha": 0.35, "legend_columns": 2, "marker_size": 8.0,
+        "scatter_size": 40.0, "tick_length": 6.0, "dpi": 150,
+    },
+    "poster": {
+        "size": "slide", "font_size": 24.0, "line_width": 4.0, "spines": "all",
+        "legend_frame": True, "legend_frame_alpha": 1.0, "marker_size": 11.0,
+        "scatter_size": 70.0, "tick_length": 8.0, "label_pad": 14.0, "dpi": 300,
+    },
+}
 
 
 def _hex_to_rgb(value: str) -> tuple[int, int, int]:
@@ -233,6 +256,14 @@ class Style:
     colorbar_pad: float = 0.03
     fill_difference: bool = False
     fill_alpha: float = 0.15
+    # H export
+    dpi: int = 300
+    preview_dpi: int = 110
+    svg_text_as_paths: bool = False
+    pdf_embed_type42: bool = True
+    transparent: bool = False
+    tight_bbox: bool = False
+    pad_inches: float = 0.1
 
     @property
     def colors(self) -> list[str]:
@@ -367,6 +398,17 @@ class Style:
             raise ValueError(f"series_zorder 需在 -100–100 之间，当前 {self.series_zorder}")
         if not self.show_lines and not self.show_points:
             raise ValueError("show_lines 与 show_points 不能同时关闭，否则系列不可见")
+        if not 40 <= int(self.dpi) <= 3000:
+            raise ValueError(f"dpi 需在 40–3000 之间，当前 {self.dpi}")
+        if not 40 <= int(self.preview_dpi) <= 600:
+            raise ValueError(f"preview_dpi 需在 40–600 之间，当前 {self.preview_dpi}")
+        if int(self.preview_dpi) > int(self.dpi):
+            raise ValueError(
+                f"preview_dpi ({self.preview_dpi}) 不应高于导出 dpi ({self.dpi})，"
+                "预览不会比成品更清晰"
+            )
+        if not 0.0 <= float(self.pad_inches) <= 2.0:
+            raise ValueError(f"pad_inches 需在 0–2 之间，当前 {self.pad_inches}")
         return self
 
     def size_inches(self) -> tuple[float, float]:
@@ -459,18 +501,25 @@ class Style:
             "legend.columnspacing": self.legend_column_spacing,
             "legend.borderpad": self.legend_border_padding,
             "legend.title_fontsize": self.legend_title_size,
-            "savefig.facecolor": "white",
+            "savefig.facecolor": "none" if self.transparent else "white",
             # Vector text stays editable in Illustrator unless the caller asks
             # for paths; both matter for journal submission.
-            "svg.fonttype": "none",
-            "pdf.fonttype": 42,
+            "svg.fonttype": "path" if self.svg_text_as_paths else "none",
+            "pdf.fonttype": 42 if self.pdf_embed_type42 else 3,
         }
 
     def figure_kwargs(self) -> dict:
         return {"facecolor": "white", "layout": "constrained"}
 
-    def savefig_kwargs(self, dpi: int = 300) -> dict:
-        return {"dpi": int(dpi), "facecolor": "white"}
+    def savefig_kwargs(self, dpi: int | None = None) -> dict:
+        """`dpi` is only an override for callers that have no Style of their
+        own; a figure rendered from a Style exports at that Style's dpi."""
+        return {
+            "dpi": int(dpi or self.dpi),
+            "facecolor": "none" if self.transparent else "white",
+            "bbox_inches": "tight" if self.tight_bbox else None,
+            "pad_inches": self.pad_inches,
+        }
 
     # ------------------------------------------------------------------
     def bake_into(self, fig) -> "Style":
@@ -613,6 +662,45 @@ class Style:
                 f"{'最接近的是：' + ', '.join(near) if near else ''}"
             )
         return cls(**values).validate()
+
+    @classmethod
+    def from_preset(cls, name: str = "default", **overrides) -> "Style":
+        """A named preset, with any field overridden on top.
+
+        Unknown names are rejected rather than falling back to default, so a
+        typo in a shared preset file is visible instead of quietly producing a
+        differently-styled figure.
+        """
+        if name not in STYLE_PRESETS:
+            near = difflib.get_close_matches(name, sorted(STYLE_PRESETS), n=3)
+            raise ValueError(
+                f"未知样式预设 {name!r}。可用：{', '.join(sorted(STYLE_PRESETS))}。"
+                f"{'最接近的是：' + ', '.join(near) if near else ''}"
+            )
+        values = dict(STYLE_PRESETS[name])
+        values.update(overrides)
+        return cls.from_dict(values)
+
+    def save_preset(self, path) -> Path:
+        """Write the whole style out so a group can share one house look."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        body = json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
+        target.write_text(body + "\n", encoding="utf-8")
+        return target
+
+    @classmethod
+    def load_preset(cls, path) -> "Style":
+        source = Path(path)
+        if not source.exists():
+            raise ValueError(f"找不到样式预设文件：{source}")
+        try:
+            values = json.loads(source.read_text(encoding="utf-8-sig"))
+        except ValueError as exc:
+            raise ValueError(f"样式预设不是合法 JSON：{source}（{exc}）") from None
+        if not isinstance(values, dict):
+            raise ValueError(f"样式预设应是一个 JSON 对象，{source} 里是 {type(values).__name__}")
+        return cls.from_dict(values)
 
     def replace(self, **values) -> "Style":
         return replace(self, **values).validate()

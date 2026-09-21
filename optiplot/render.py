@@ -84,7 +84,9 @@ def render(profile, rec, output=None, options=None, style=None):
     enc.update(opts.get("encodings", {}))
     df = profile.data if isinstance(profile.data, pd.DataFrame) else pd.DataFrame(profile.data)
     with matplotlib.rc_context(style.rc_params()):
-        fig = Figure(figsize=style.size_inches(), dpi=110, **style.figure_kwargs())
+        fig = Figure(
+            figsize=style.size_inches(), dpi=style.preview_dpi, **style.figure_kwargs()
+        )
         ax = fig.add_subplot(111, projection="polar" if rec.id == "polar" else None)
         _draw(ax, fig, df, rec.id, enc, opts, style)
         if opts.get("title"):
@@ -124,7 +126,7 @@ def render(profile, rec, output=None, options=None, style=None):
             out = Path(output)
             if out.suffix.lower() not in [".png", ".svg", ".pdf"]:
                 raise ValueError("导出格式必须是 PNG / SVG / PDF。")
-            fig.savefig(out, **style.savefig_kwargs(opts.get("dpi", 300)))
+            fig.savefig(out, **style.savefig_kwargs())
         return fig
 
 

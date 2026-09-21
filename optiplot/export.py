@@ -9,14 +9,21 @@ import zipfile
 import importlib.metadata
 import matplotlib
 from .render import render
+from .style import Style
 
 
 def export_bundle(profile, recommendation, path, options=None):
     options = options or {}
+    # Resolved once here purely so the recipe records the full style; render()
+    # splits the same dict again on its own.
+    style, _ = Style.from_options(options)
     data = profile.data.to_csv(index=False).encode("utf-8-sig")
     recipe = {
-        "format_version": 1,
+        "format_version": 2,
         "recommendation": asdict(recommendation),
+        # The whole resolved style, not just what the caller happened to pass:
+        # a replay must not depend on which defaults the current version ships.
+        "style": style.to_dict(),
         "options": options,
         "data_sha256": hashlib.sha256(data).hexdigest(),
         "source_name": Path(profile.path).name,
@@ -29,6 +36,7 @@ from types import SimpleNamespace
 import json, hashlib
 import pandas as pd
 from rendering import render
+from style import Style
 root = Path(__file__).resolve().parent
 recipe = json.loads((root / 'recipe.json').read_text(encoding='utf-8'))
 raw = (root / 'data.csv').read_bytes()
@@ -36,13 +44,19 @@ if hashlib.sha256(raw).hexdigest() != recipe['data_sha256']:
     raise ValueError('Data checksum differs from export recipe')
 profile = SimpleNamespace(data=pd.read_csv(root / 'data.csv'))
 rec = SimpleNamespace(**recipe['recommendation'])
+# style.json is also shipped standalone so the look can be reused as a preset
+style = Style.load_preset(root / 'style.json')
 for suffix in ['png', 'svg', 'pdf']:
-    render(profile, rec, root / ('reproduced.' + suffix), options=recipe['options'])
+    render(profile, rec, root / ('reproduced.' + suffix),
+           options=recipe['options'], style=style)
 print('Reproduced PNG, SVG and PDF')
 """
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as z:
         z.writestr("data.csv", data)
         z.writestr("recipe.json", json.dumps(recipe, ensure_ascii=False, indent=2))
+        z.writestr(
+            "style.json", json.dumps(style.to_dict(), ensure_ascii=False, indent=2) + "\n"
+        )
         z.writestr("render_plot.py", replay)
         z.writestr(
             "rendering.py", Path(__file__).with_name("render.py").read_text(encoding="utf-8-sig")
@@ -60,8 +74,8 @@ print('Reproduced PNG, SVG and PDF')
         )
         for ext in ["png", "svg", "pdf"]:
             buf = io.BytesIO()
-            with matplotlib.rc_context({"svg.fonttype": "none", "pdf.fonttype": 42}):
-                fig.savefig(buf, format=ext, dpi=int(options.get("dpi", 300)))
+            with matplotlib.rc_context(style.rc_params()):
+                fig.savefig(buf, format=ext, **style.savefig_kwargs())
             z.writestr("figure." + ext, buf.getvalue())
     fig.clear()
     return Path(path)
