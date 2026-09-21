@@ -47,6 +47,10 @@ print('Reproduced PNG, SVG and PDF')
         z.writestr(
             "rendering.py", Path(__file__).with_name("render.py").read_text(encoding="utf-8-sig")
         )
+        # render.py imports Style; the bundle has to carry it or replay fails.
+        z.writestr(
+            "style.py", Path(__file__).with_name("style.py").read_text(encoding="utf-8-sig")
+        )
         z.writestr(
             "requirements.txt", "\n".join(f"{p}=={v}" for p, v in recipe["versions"].items())
         )

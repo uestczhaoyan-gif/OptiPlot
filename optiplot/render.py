@@ -6,9 +6,13 @@ import numpy as np
 import pandas as pd
 import matplotlib
 from matplotlib.figure import Figure
-from matplotlib import font_manager
 from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+
+try:  # normal import, as part of the optiplot package
+    from .style import Style
+except ImportError:  # standalone copy inside an exported reproducible bundle
+    from style import Style
 
 COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 # The authoritative list of drawable figure types. A new branch in _draw is not
@@ -29,15 +33,6 @@ FIGURE_TYPES = (
     "flow",
     "table",
 )
-SIZES = {"preview": (7.2, 4.7), "single": (3.5, 2.65), "double": (7.2, 4.6), "slide": (10, 5.625)}
-FONT = next(
-    (
-        f
-        for f in ["Microsoft YaHei", "SimHei", "Noto Sans CJK SC", "DejaVu Sans"]
-        if f in {x.name for x in font_manager.fontManager.ttflist}
-    ),
-    "DejaVu Sans",
-)
 
 
 def _finite(df, names):
@@ -48,32 +43,37 @@ def _finite(df, names):
     return out
 
 
+def _colorbar(fig, m, ax, label, style):
+    """Artist-level styling: the one routing point rcParams cannot reach."""
+    cb = fig.colorbar(m, ax=ax, label=label)
+    cb.outline.set_linewidth(0.7)
+    cb.ax.yaxis.label.set_fontsize(style.resolved_font_size() * style.colorbar_scale)
+    return cb
+
+
 def kind_for_log(kind, axis):
     return kind == "distribution" and axis == "x"
 
 
-def render(profile, rec, output=None, options=None):
+def render(profile, rec, output=None, options=None, style=None):
+    """Draw one recommendation and return the Figure.
+
+    `style` is the presentation half of the plumbing; when omitted it is split
+    out of `options`, so existing callers that pass one flat dict keep working.
+    Pass a Style directly when the caller already owns one.
+    """
     opts = options or {}
+    if style is None:
+        style, opts = Style.from_options(opts)
+    elif not isinstance(style, Style):
+        style = Style.from_dict(style)
     enc = dict(rec.encodings)
     enc.update(opts.get("encodings", {}))
     df = profile.data if isinstance(profile.data, pd.DataFrame) else pd.DataFrame(profile.data)
-    size = SIZES.get(opts.get("size", "preview"), SIZES["preview"])
-    style = {
-        "font.family": "sans-serif",
-        "font.sans-serif": [FONT, "DejaVu Sans"],
-        "axes.unicode_minus": False,
-        "font.size": 9 if opts.get("size") == "single" else 11,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.linewidth": 0.7,
-        "svg.fonttype": "none",
-        "pdf.fonttype": 42,
-        "savefig.facecolor": "white",
-    }
-    with matplotlib.rc_context(style):
-        fig = Figure(figsize=size, dpi=110, layout="constrained", facecolor="white")
+    with matplotlib.rc_context(style.rc_params()):
+        fig = Figure(figsize=style.size_inches(), dpi=110, **style.figure_kwargs())
         ax = fig.add_subplot(111, projection="polar" if rec.id == "polar" else None)
-        _draw(ax, fig, df, rec.id, enc, opts)
+        _draw(ax, fig, df, rec.id, enc, opts, style)
         if opts.get("title"):
             ax.set_title(opts["title"], pad=14, loc="left")
         if opts.get("xlabel"):
@@ -103,15 +103,16 @@ def render(profile, rec, output=None, options=None):
                     raise ValueError("对数轴要求全部数据大于 0。")
                 getattr(ax, "set_" + axis + "scale")("log")
         fig.optiplot_encodings = enc
+        style.bake_into(fig)
         if output:
             out = Path(output)
             if out.suffix.lower() not in [".png", ".svg", ".pdf"]:
                 raise ValueError("导出格式必须是 PNG / SVG / PDF。")
-            fig.savefig(out, dpi=int(opts.get("dpi", 300)))
+            fig.savefig(out, **style.savefig_kwargs(opts.get("dpi", 300)))
         return fig
 
 
-def _draw(ax, fig, df, kind, e, opts):
+def _draw(ax, fig, df, kind, e, opts, style):
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
         group = e["group"]
@@ -120,7 +121,7 @@ def _draw(ax, fig, df, kind, e, opts):
             df.dropna(subset=[group]).groupby(group, sort=False, observed=True)
         ):
             before_lines, before_cols = len(ax.lines), len(ax.collections)
-            _draw(ax, fig, subset, kind, sub_enc, opts)
+            _draw(ax, fig, subset, kind, sub_enc, opts, style)
             color = COLORS[i % len(COLORS)]
             for line in ax.lines[before_lines:]:
                 line.set_color(color)
@@ -162,7 +163,7 @@ def _draw(ax, fig, df, kind, e, opts):
         x, y = d[xname].to_numpy(), d[yname].to_numpy()
         if kind == "density":
             m = ax.hexbin(x, y, gridsize=45, mincnt=1, cmap="viridis", bins="log")
-            fig.colorbar(m, ax=ax, label="Count (log color scale)")
+            _colorbar(fig, m, ax, "Count (log color scale)", style)
         else:
             ax.scatter(
                 x, y, s=16, alpha=0.65, color=COLORS[0], edgecolors="none", rasterized=len(d) > 5000
@@ -268,7 +269,7 @@ def _draw(ax, fig, df, kind, e, opts):
             m = ax.contourf(ux, uy, z, levels=14, cmap=cmap, norm=norm)
         else:
             m = ax.pcolormesh(ux, uy, np.ma.masked_invalid(z), shading="auto", cmap=cmap, norm=norm)
-        fig.colorbar(m, ax=ax, label=zn)
+        _colorbar(fig, m, ax, zn, style)
         ax.set(xlabel=xn, ylabel=yn)
         ax.grid(False)
         return
@@ -333,7 +334,7 @@ def _draw(ax, fig, df, kind, e, opts):
         m = ax.imshow(corr, vmin=-1, vmax=1, cmap="RdBu_r")
         ax.set_xticks(range(len(cols)), cols, rotation=40, ha="right")
         ax.set_yticks(range(len(cols)), cols)
-        fig.colorbar(m, ax=ax, label="Pearson r; pairwise complete")
+        _colorbar(fig, m, ax, "Pearson r; pairwise complete", style)
         if len(cols) <= 7:
             for i in range(len(cols)):
                 for j in range(len(cols)):

@@ -22,13 +22,31 @@ flowchart LR
 | 文件 | 职责 |
 |---|---|
 | `optiplot/core.py` | 导入、验证、物理变量名称启发式、推荐条件与等级。`analyze_dataframe` 不修改调用者的 DataFrame |
-| `optiplot/render.py` | 确定性 Matplotlib 渲染器。`FIGURE_TYPES` 是图型 ID 的权威列表；样式参数走 `options`；每种图显式消耗 `Recommendation.encodings` |
+| `optiplot/style.py` | 样式参数的唯一所有者。`Style` 是不可变 dataclass，负责把参数路由到 Matplotlib 的四个应用点：`rc_params()`（绘制期继承）、`figure_kwargs()`（Figure 构造）、`savefig_kwargs()`（导出）、以及 `bake_into()` / `_draw` 里逐 artist 应用。`from_options()` 把一次传入的扁平 dict 拆成「样式」与「数据内容」两半，未知键直接报错 |
+| `optiplot/render.py` | 确定性 Matplotlib 渲染器。`FIGURE_TYPES` 是图型 ID 的权威列表；样式参数走 `Style`；每种图显式消耗 `Recommendation.encodings` |
 | `optiplot/export.py` | 完整表格、配方与数据校验、独立渲染脚本、版本及图片打包 |
 | `optiplot/cli.py` | 批量导出接口 |
 | `app.py` | Tkinter 展示层，共用引擎，不重复实现统计逻辑（将由 Web 前端替换） |
 | `catalog/styles.json` | 图型子类库：`id` / `label` / `patterns` / `data_schema` / `recipe`。只引用 `FIGURE_TYPES` 中的 ID，由测试强制 |
 | `catalog/papers.json` | 题录。项目级凭据，用于说明图型集合来自真实顶刊阅读；**不接入渲染路径，不在每张图下方展示** |
 | `research/` | 开发期工具与调研笔记，不属于产品运行时 |
+
+## 字体：一条绕不过去的 Matplotlib 约束
+
+`font.sans-serif` 是一个列表，但 **Matplotlib 不逐字形回退**，而中文字体（雅黑、宋体、楷体）自带拉丁字形。后果是二选一：
+
+| 字体栈顺序 | 中文 | `family`（拉丁字体族） |
+|---|---|---|
+| 中文在前 | 正常 | **失效**——拉丁文字也被中文字体接管 |
+| 拉丁在前 | **豆腐块 □□□□** | 正常 |
+
+所以 `Style` 把两者做成显式互斥，而不是让两个都半坏：图里有中文就必须中文字体在前，`family` 只作缺字形后备；纯英文图（投稿常态）设 `cjk="none"`，`family` 才完全生效。
+
+**第二条约束**：`font.family` 每次绘制时从 rcParams 重新读取，而 `render()` 返回后调用方才绘制——那时 rc 上下文已关闭，字体会静默回落到全局默认。字号没有这个问题（创建 artist 时已固化），字体族有。
+
+因此 `Style.bake_into(fig)` 是必需的：附加真实渲染器、强制绘制一次以生成刻度标签、再把解析好的字体栈逐个写到 Text artist 上。之后这张图无论在哪里绘制——GUI 画布、savefig、还是重放可复现包——都自带自己的排版。
+
+`tests/test_style.py` 里两个测试各守一类静默失败：`test_chinese_text_actually_renders_with_the_default_style` 把字形缺失的 UserWarning 提升为错误，`test_family_knob_changes_latin_glyphs_when_cjk_is_off` 用 PNG 哈希证明 `family` 真的改变了像素。改排版相关代码时不要绕过它们。
 
 ## 数据层的来历
 
@@ -52,6 +70,6 @@ flowchart LR
 
 数据推断与渲染当前在 GUI 主线程，适用于中小规模研究数据。六边形分箱可改善高密度散点显示，但数十万行或超宽矩阵仍可能令界面等待。下一阶段可增加后台加载、可取消任务、通道选择与按需预览。
 
-样式参数目前只有 `size / fit / angle_unit / error_type / title / xlabel / ylabel / xlog / ylog / dpi`；字体、线宽、线型、标记、图例与刻度尚不可调，这是 N3 的范围。
+样式参数已建立管道（`optiplot/style.py`），A 排版组与 B 画布的 `size` 已落地：字体族、中文字体、基准字号、五个元素的独立字号倍率、标题/轴标签字重、轴标与刻度留白。C 坐标轴（脊线显隐与线宽、刻度方向与密度、网格）、E 图例、F 颜色、H 导出、I 样式预设仍待做——目前脊线与网格线宽在 `rc_params()` 里是写死的常量，已注释标明。
 
 扩展优先级见 [roadmap](roadmap.md)：图型扩充与样式参数系统在前；多面板排版、带量纲的列角色配置、光路 SVG 元件、物理拟合模型插件随后。Python 引擎是本版实现，MATLAB 渲染后端尚未实现。

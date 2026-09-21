@@ -113,12 +113,14 @@
 数据检查与样式预设降级为抽屉。
 - **判据**：用户点一遍认可"不冗余"
 
-### N3a · 图型无关参数系统（**先做**）
-理由：审美因人而异，改一点点观感差别很大；且这是当前最大的功能缺口——现在可调的只有 `size / fit / angle_unit / error_type / title / xlabel / ylabel / xlog / ylog / dpi`，字体、线宽、线型、标记、图例、刻度全部不可调。
+### N3a · 图型无关参数系统（进行中）
+理由：审美因人而异，改一点点观感差别很大；且这是当前最大的功能缺口——原先可调的只有 `size / fit / angle_unit / error_type / title / xlabel / ylabel / xlog / ylog / dpi`，字体、线宽、线型、标记、图例、刻度全部不可调。
 
-审计现状：`render.py` 里 13 处 `opts.get` 各写各的约定，约 20 处硬编码样式值（`lw=1.65`、`s=16`、`alpha=0.65`、`ms=4`、`capsize=3`、`gridsize=45`、`levels=14`、`fontsize="small"`、`frameon=False`…）。**先立管道，后续每个新图型对着管道写**，否则新分支会继续累积 ad-hoc 读取和硬编码，最后要回头统一改。
+**已完成**：`optiplot/style.py` 参数管道（四个应用点 + 未知键报错）；A 排版组全部字段；B 画布的 `size`；色标标签字号走 artist 级路由。新增 29 项测试，其中两项专门守字体族的静默失败（见 [architecture](architecture.md) 的字体一节）。
 
-范围：清单 A 排版、B 画布、C 坐标轴、E 图例、F 颜色、H 导出、I 样式预设。这些不会因为新增瀑布图或 Poincaré 球而改变。
+审计原状：`render.py` 里 13 处 `opts.get` 各写各的约定，约 20 处硬编码样式值（`lw=1.65`、`s=16`、`alpha=0.65`、`ms=4`、`capsize=3`、`gridsize=45`、`levels=14`、`fontsize="small"`、`frameon=False`…）。**先立管道，后续每个新图型对着管道写**，否则新分支会继续累积 ad-hoc 读取和硬编码，最后要回头统一改。
+
+**待做**：B 画布余下部分（自定义尺寸、宽高比锁定、四边留白、布局方式、背景）、C 坐标轴、E 图例、F 颜色、H 导出、I 样式预设。
 - **判据**：每个参数有对应测试；预览与导出逐像素一致
 
 ### N3b · 图型专属参数（**跟随每个新图型**）
