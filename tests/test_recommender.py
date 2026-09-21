@@ -219,11 +219,26 @@ class RecommenderTestCase(unittest.TestCase):
                 "target",
                 "error",
                 "columns",
+                "param",
+                "wave",
+                "right",
             ):
                 if key in rec.encodings:
                     value = rec.encodings[key]
                     for col in value if isinstance(value, list) else [value]:
                         self.assertIn(col, p.columns)
+
+    def test_trailing_letters_are_units_only_when_the_name_says_so(self):
+        """`forward_voltage_V` carries volts; the A in `device_A` labels a series."""
+        from optiplot.core import _distinct_quantity, _unit_of
+
+        self.assertEqual(_unit_of("forward_voltage_V"), "v")
+        self.assertEqual(_unit_of("drain_current_A"), "a")
+        self.assertIsNone(_unit_of("device_A"))
+        self.assertIsNone(_unit_of("channel_B"))
+        self.assertTrue(_distinct_quantity("forward_voltage_V", "optical_power_mW"))
+        self.assertFalse(_distinct_quantity("device_A", "device_B"))
+        self.assertFalse(_distinct_quantity("x_um", "intensity_au"))
 
 
 class FileInputTestCase(unittest.TestCase):

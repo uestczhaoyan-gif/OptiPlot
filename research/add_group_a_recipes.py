@@ -13,6 +13,36 @@ styles_path = here / "catalog" / "styles.json"
 styles = json.loads(styles_path.read_text(encoding="utf-8"))
 
 NEW = [
+    # --- dual_axis ---
+    ("dual_axis", "透反射同框",
+     "wavelength_nm, T_percent, R_percent",
+     "透射率与反射率共用波长轴但各占一条纵轴；两轴刻度独立，曲线看似同步不能当作二者相关的证据，要论证关系须改用散点图。"),
+    ("dual_axis", "LIV 与正向电压",
+     "drive_current_mA, optical_power_mW, forward_voltage_V",
+     "光功率与正向电压对同一驱动电流作图；开启电压与阈值拐点应分别读各自轴，不要把两条曲线的交点解释为物理阈值。"),
+    ("dual_axis", "谱位与线宽演化",
+     "temperature_K, peak_wavelength_nm, fwhm_nm",
+     "峰位与半高宽随温度同框；二者量纲不同故分轴，若只想表达趋势应拆成上下两个子图共享横轴。"),
+    # --- spectral_derivative ---
+    ("spectral_derivative", "吸收边导数定位",
+     "wavelength_nm, absorbance",
+     "对吸收谱求导以定位带隙边沿；微分放大噪声，须先确认原始数据平滑度，必要时同时给出原谱与导数两个子图。"),
+    ("spectral_derivative", "消光谱一阶导稳频",
+     "wavelength_nm, saturation_signal",
+     "饱和吸收一阶导曲线用于锁频参考零点；过零点位置即参考，须标注扫描方向与磁场条件，且采样必须严格单调无重复波长。"),
+    ("spectral_derivative", "椭偏参数拐点",
+     "wavelength_nm, psi_deg",
+     "Ψ 随波长的导数用于识别色散反常区；导数曲线不能替代原始 Ψ/Δ 双量展示，应作为附子图而非替换。"),
+    # --- peak_evolution ---
+    ("peak_evolution", "变角度共振色散",
+     "theta_deg, wavelength_nm, reflectance",
+     "每个角度取反射 dip 的中心波长与半高宽，得到随角度的色散与展宽；峰位于扫描边界的角度必须跳过并计数，不得把扫描端点当作共振。"),
+    ("peak_evolution", "温漂峰位与线宽",
+     "temperature_K, wavelength_nm, electroluminescence",
+     "发光峰位与 FWHM 随温度变化，用于提取热淬灭趋势；半高宽以曲线端点的较高本底为参考，不以零为参考。"),
+    ("peak_evolution", "多峰样品的峰跟踪",
+     "gate_voltage_V, wavelength_nm, transmission",
+     "存在多个峰时必须先指定跟踪哪一个（最接近某波长、或最高），否则逐角度取最大值会让峰位在两个峰之间跳变；本图型默认取内部极值，多峰须人工核对。"),
     # --- spectral_difference ---
     ("spectral_difference", "损耗工程差分透射谱",
      "wavelength_nm, T_with_antenna, T_without_antenna",

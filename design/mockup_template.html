@@ -218,11 +218,11 @@ details[open] summary{margin-bottom:10px}
       <div class="body">
         <p class="warn">这是界面稿，不是可运行的产品。</p>
         <p>· 文件选择只读出文件名，剖析与渲染需要 N7 的 FastAPI 后端才真正工作；
-        现在看到的图全部来自内置的 9 份模拟样例。</p>
-        <p>· 参数条仍是现状的 10 项。字体、线宽、线型、标记、图例、刻度、色带属于
-        N3a 图型无关参数系统，尚未实现。</p>
-        <p>· 图型库的 13 张预览由 <code>render.py</code> 用真实引擎渲染，
-        小类来自 <code>catalog/styles.json</code>。</p>
+        现在看到的图全部来自 <code>examples/</code> 里的模拟样例。</p>
+        <p>· 引擎侧的样式参数系统（排版/画布/坐标轴/图例/颜色/导出/预设）已经可用，
+        本稿的参数条只暴露了其中一小部分，完整参数条属于 N2 待冻结的界面契约。</p>
+        <p>· 图型库的预览由 <code>render.py</code> 用真实引擎渲染，
+        小类来自 <code>catalog/styles.json</code>；渲染失败的图型会标成空白而不是省略。</p>
       </div></details>
   </div>
 </main>

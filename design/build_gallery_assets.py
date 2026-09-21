@@ -16,8 +16,10 @@ root = Path(__file__).resolve().parents[1]
 out = Path(__file__).resolve().parent / "assets" / "gallery"
 out.mkdir(parents=True, exist_ok=True)
 
-# ordered so the cheapest, most common optics cases come first
-DATASETS = [
+# ordered so the cheapest, most common optics cases come first; anything else
+# that appears in examples/ is appended automatically, because a preview list
+# someone has to remember to update is how a registered type ships with no image
+PREFERRED = [
     "sample_spectrum",
     "sample_beam_map",
     "sample_polarization",
@@ -27,6 +29,9 @@ DATASETS = [
     "sample_dense_scatter",
     "sample_workflow",
 ]
+DATASETS = PREFERRED + sorted(
+    {p.stem for p in (root / "examples").glob("*.csv")} - set(PREFERRED)
+)
 
 profiles = {}
 for name in DATASETS:

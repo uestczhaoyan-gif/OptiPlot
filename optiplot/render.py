@@ -23,7 +23,10 @@ FIGURE_TYPES = (
     "spectral_difference",
     "spectral_ratio",
     "spectral_envelope",
+    "spectral_derivative",
     "energy_axis",
+    "dual_axis",
+    "peak_evolution",
     "scatter_fit",
     "density",
     "errorbar",
@@ -92,12 +95,79 @@ def _legend(ax, style, **overrides):
 
 
 def _colorbar(fig, m, ax, label, style):
-    """Artist-level styling: the one routing point rcParams cannot reach."""
-    cb = fig.colorbar(m, ax=ax, label=label, fraction=style.colorbar_thickness,
-                            pad=style.colorbar_pad)
+    """Artist-level styling: one of the two routing points rcParams cannot reach."""
+    cb = fig.colorbar(
+        m, ax=ax, label=label, fraction=style.colorbar_thickness, pad=style.colorbar_pad
+    )
     cb.outline.set_linewidth(0.7)
     cb.ax.yaxis.label.set_fontsize(style.resolved_font_size() * style.colorbar_scale)
     return cb
+
+
+def _peak_and_fwhm(wave, value):
+    """Locate the interior extremum of a curve and its full width at half maximum.
+
+    Returns (position, width, is_maximum) with NaNs when the curve has no
+    interior turning point. The half-maximum is measured against the higher of
+    the two curve endpoints rather than zero, because a reflectance dip sitting
+    on a pedestal of 0.9 is not 90% deep.
+    """
+    wave = np.asarray(wave, dtype=float)
+    value = np.asarray(value, dtype=float)
+    order = np.argsort(wave)
+    wave, value = wave[order], value[order]
+    if wave.size < 5:
+        return np.nan, np.nan, None
+    i_max, i_min = int(np.nanargmax(value)), int(np.nanargmin(value))
+    # Both turning points are candidates and the deeper one wins. Preferring the
+    # maximum outright lets a reflectance dip be reported at the tallest noise
+    # spike, because a curve that is flat everywhere except at its dip has a
+    # thousand interior samples that all "exceed" their neighbours' endpoints.
+    candidates = []
+    if 0 < i_max < wave.size - 1 and value[i_max] > max(value[0], value[-1]):
+        candidates.append((value[i_max] - max(value[0], value[-1]), i_max, True))
+    if 0 < i_min < wave.size - 1 and value[i_min] < min(value[0], value[-1]):
+        candidates.append((min(value[0], value[-1]) - value[i_min], i_min, False))
+    if not candidates:
+        return np.nan, np.nan, None
+    excursion, idx, is_max = max(candidates)
+    amplitude = value[idx]
+    pedestal = max(value[0], value[-1]) if is_max else min(value[0], value[-1])
+    half = amplitude + (pedestal - amplitude) / 2.0
+
+    def crossing(indices):
+        for position in indices:
+            low, high = value[position], value[position + 1]
+            if (low - half) * (high - half) <= 0 and high != low:
+                frac = (half - low) / (high - low)
+                return wave[position] + frac * (wave[position + 1] - wave[position])
+        return np.nan
+
+    left = crossing(range(idx - 1, -1, -1))
+    right = crossing(range(idx, wave.size - 1))
+    width = right - left if np.isfinite(left) and np.isfinite(right) else np.nan
+    return _refine(wave, value, idx, is_max), width, is_max
+
+
+def _refine(wave, value, idx, is_max):
+    """Sub-sample extremum position from the parabola through the peak and its
+    two neighbours.
+
+    The nearest sample can be a whole grid step away from the true resonance, so
+    an angle-resolved track would otherwise advance in flat stair-steps and a
+    peak 8 nm from its neighbour would read as unmoved.
+    """
+    if idx < 1 or idx >= wave.size - 1:
+        return wave[idx]
+    x = wave[idx - 1 : idx + 2]
+    y = value[idx - 1 : idx + 2]
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)) or len(set(x)) < 3:
+        return wave[idx]
+    a, b, _ = np.polyfit(x - x[1], y, 2)
+    if a == 0 or (a > 0) != (not is_max):
+        return wave[idx]
+    offset = -b / (2 * a)
+    return float(x[1] + offset) if x[0] <= x[1] + offset <= x[2] else wave[idx]
 
 
 def kind_for_log(kind, axis):
@@ -314,6 +384,111 @@ def _draw(ax, fig, df, kind, e, opts, style):
         ax.secondary_xaxis("top", functions=(_nm_to_ev, _nm_to_ev)).set_xlabel(
             "photon energy / eV"
         )
+    elif kind == "dual_axis":
+        d, xname, a, b = _spectral_pair(df, e)
+        right_column = e.get("right", b)
+        left_column = a if right_column == b else b
+        ax.plot(
+            d[xname].to_numpy(),
+            d[left_column].to_numpy(),
+            color=palette[0 % len(palette)],
+            label=left_column,
+            **style.series_style(0),
+        )
+        second = ax.twinx()
+        second.plot(
+            d[xname].to_numpy(),
+            d[right_column].to_numpy(),
+            color=palette[1 % len(palette)],
+            label=right_column,
+            **style.series_style(1),
+        )
+        # Colour each axis label to its own series, otherwise a two-axis frame
+        # invites reading either curve against whichever scale is nearer.
+        ax.set_ylabel(left_column, color=palette[0 % len(palette)])
+        second.set_ylabel(right_column, color=palette[1 % len(palette)])
+        ax.set_xlabel(xname)
+        ax.tick_params(axis="y", colors=palette[0 % len(palette)])
+        second.tick_params(axis="y", colors=palette[1 % len(palette)])
+        lines = ax.get_lines() + second.get_lines()
+        _legend(ax, style, handles=lines)
+    elif kind == "spectral_derivative":
+        xname = e["x"]
+        ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+        if not 1 <= len(ys) <= 8:
+            raise ValueError("导数图请选择 1–8 个响应列。")
+        plotted = 0
+        for i, yname in enumerate(ys):
+            d = (
+                df[[xname, yname]]
+                .apply(pd.to_numeric, errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+                .dropna()
+                .sort_values(xname)
+            )
+            if d[xname].nunique() < 3:
+                continue
+            slope = np.gradient(
+                d[yname].to_numpy(), d[xname].to_numpy(), edge_order=2 if len(d) > 3 else 1
+            )
+            ax.plot(
+                d[xname].to_numpy(),
+                slope,
+                color=palette[i % len(palette)],
+                label=f"d {yname} / d {xname}",
+                **style.series_style(i),
+            )
+            plotted += 1
+        if not plotted:
+            raise ValueError("没有足够的有序采样点可以求导。")
+        ax.axhline(0.0, color="#7A94AB", lw=0.9, ls="--", zorder=1)
+        ax.set(xlabel=xname, ylabel=f"d / d{xname}")
+        _legend(ax, style)
+    elif kind == "peak_evolution":
+        param, wave, value = e["param"], e["wave"], e["value"]
+        rows = df[[param, wave, value]].dropna()
+        if rows.empty:
+            raise ValueError("没有可用于提取峰位的完整三元组。")
+        positions, widths, skipped = [], [], 0
+        for level, group in rows.groupby(param, sort=True):
+            peak, width, _ = _peak_and_fwhm(group[wave].to_numpy(), group[value].to_numpy())
+            if not np.isfinite(peak):
+                skipped += 1
+                continue
+            positions.append((float(level), float(peak)))
+            widths.append((float(level), float(width) if np.isfinite(width) else np.nan))
+        if len(positions) < 2:
+            raise ValueError(
+                f"只有 {len(positions)} 个 {param} 取值存在内部极值，无法构成演化曲线；"
+                "若峰位于扫描边界，请扩大扫描范围而不是画出来。"
+            )
+        ax.plot(
+            [p[0] for p in positions],
+            [p[1] for p in positions],
+            color=palette[0 % len(palette)],
+            label=f"peak {wave}",
+            **style.series_style(0),
+        )
+        second = ax.twinx() if widths else None
+        finite = [(w[0], w[1]) for w in widths if np.isfinite(w[1])]
+        if second is not None and finite:
+            second.plot(
+                [p[0] for p in finite],
+                [p[1] for p in finite],
+                color=palette[1 % len(palette)],
+                label="FWHM",
+                **style.series_style(1),
+            )
+            second.set_ylabel("FWHM", color=palette[1 % len(palette)])
+            second.tick_params(axis="y", colors=palette[1 % len(palette)])
+        ax.set(xlabel=param, ylabel=f"peak {wave}")
+        if skipped:
+            ax.set_title(
+                f"{skipped} 个 {param} 取值无内部极值，已跳过",
+                fontsize=style.resolved_font_size() * 0.85,
+            )
+        handles = ax.get_lines() + (second.get_lines() if second is not None else [])
+        _legend(ax, style, handles=handles)
     elif kind in ["scatter_fit", "density"]:
         xname, yname = e["x"], e["y"]
         d = _finite(df, [xname, yname])

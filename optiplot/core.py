@@ -106,6 +106,23 @@ UNITS = {
 }
 
 
+# A one-letter tail is only a unit when the stem names the quantity that letter
+# measures. "A" is the ampere, but a trailing A/B/C is far more often a series
+# label, so device_A stays unit-less while forward_voltage_V really does carry
+# volts -- and a laser's current/voltage/power sweep is exactly the case where
+# two responses need separate axes.
+LETTER_UNITS = {
+    "v": {"voltage", "potential", "bias"},
+    "a": {"current", "amperage"},
+    "w": {"power"},
+    "k": {"temperature"},
+    "s": {"time", "delay", "duration"},
+    "g": {"mass", "weight"},
+    "m": {"length", "distance", "position", "absorbance", "transmittance"},
+    "d": {"diameter", "thickness", "depth"},
+}
+
+
 def _unit_of(name: str) -> str | None:
     """Trailing unit token, only if it is actually a known unit: `x_um` -> "um",
     but `device_A` -> None."""
@@ -113,10 +130,11 @@ def _unit_of(name: str) -> str | None:
     if len(parts) < 2:
         return None
     tail = parts[-1].lower().replace("²", "2").replace("³", "3")
-    # Single letters are too ambiguous to trust: "A" is the ampere, but a trailing
-    # A/B/C is far more often a series label. Losing "m" and "s" as units costs
-    # less than mislabelling every device_A / device_B pair as incomparable.
-    return tail if len(tail) >= 2 and tail in UNITS else None
+    if tail not in UNITS:
+        return None
+    if len(tail) >= 2 or _tokens(name) & LETTER_UNITS.get(tail, set()):
+        return tail
+    return None
 
 
 def _comparable(a: str, b: str) -> bool:
@@ -140,6 +158,38 @@ def _comparable(a: str, b: str) -> bool:
         sb = re.split(r"[_\s.]+", str(b))[0].lower()
         return sa == sb
     return False
+
+
+def _distinct_quantity(a: str, b: str) -> bool:
+    """Two columns whose named units differ, which is what could justify giving
+    them separate axes.
+
+    Deliberately conservative: both must carry a recognised unit. Columns in the
+    same unit belong on one axis, and splitting them across two is exactly how a
+    dual-axis plot manufactures a relationship that the data does not show.
+    """
+    ua, ub = _unit_of(a), _unit_of(b)
+    if not (ua and ub and ua != ub):
+        return False
+    # A bare x/y token names a coordinate of the frame rather than a response, so
+    # the cross-section of a beam map is not a second quantity to give its own
+    # scale. Quantity words that can go either way -- voltage, current, power --
+    # stay eligible, which is what a laser's I-V-P sweep needs.
+    return all(_axis_rank(c) not in (2, 5) for c in (a, b))
+
+
+def _has_interior_extremum(values) -> bool:
+    """Whether a curve turns around inside its own range rather than running
+    monotonically to an edge. A peak that sits on the boundary is a truncated
+    scan, not a resonance."""
+    v = np.asarray(values, dtype=float)
+    if v.size < 5:
+        return False
+    i = int(np.argmax(v))
+    j = int(np.argmin(v))
+    interior_max = 0 < i < v.size - 1 and v[i] > max(v[0], v[-1])
+    interior_min = 0 < j < v.size - 1 and v[j] < min(v[0], v[-1])
+    return interior_max or interior_min
 
 
 def _is_wavelength(name: str) -> bool:
@@ -430,6 +480,13 @@ def analyze_dataframe(df: pd.DataFrame, path="") -> DataProfile:
     )
 
 
+def _strictly_ordered(values) -> bool:
+    """Monotonic is not enough to differentiate: a repeated coordinate makes the
+    finite-difference denominator zero."""
+    v = values.dropna().to_numpy(dtype=float)
+    return v.size >= 4 and bool(np.all(np.diff(v) > 0) or np.all(np.diff(v) < 0))
+
+
 def _ordered(values) -> bool:
     values = values.dropna()
     return (
@@ -457,6 +514,38 @@ def _find_grid(data, eligible) -> list[str]:
             if nx >= 3 and ny >= 3 and len(valid) == nx * ny and not valid.duplicated([x, y]).any():
                 return [x, y, z]
     return []
+
+
+def _peak_trackable(p: DataProfile, data) -> dict | None:
+    """First (parameter, wavelength, response) triple whose curves have a peak
+    that can be tracked, or None.
+
+    Each parameter setting needs enough points to locate an extremum, and the
+    extremum has to be interior rather than on the edge of the scan - a "peak"
+    pinned to the last measured wavelength is a truncated sweep, and tracking it
+    would report the scan limit as a resonance.
+    """
+    used = set(p.error_columns) | set(p.id_columns) | set(p.constant_columns)
+    waves = [c for c in p.numeric_columns if _is_wavelength(c) and c not in used]
+    others = [c for c in p.numeric_columns if c not in used and c not in waves]
+    for wave in waves:
+        for param in others:
+            rest = [c for c in others if c != param]
+            for value in rest:
+                rows = data[[param, wave, value]].dropna()
+                if rows.empty:
+                    continue
+                sizes = rows.groupby(param)[wave].count()
+                if len(sizes) < 3 or (sizes < 5).any():
+                    continue
+                tracked = 0
+                for _, group in rows.groupby(param):
+                    ordered = group.sort_values(wave)
+                    if _has_interior_extremum(ordered[value].to_numpy()):
+                        tracked += 1
+                if tracked >= max(3, int(0.6 * len(sizes))):
+                    return {"param": param, "wave": wave, "value": value}
+    return None
 
 
 def _valid_count(data, columns) -> int:
@@ -675,6 +764,55 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 {"x": x, "y": measured[:8] or line_ys[:8], "secondary_unit": "eV"},
                 3,
             )
+
+        dual = [
+            (a, b)
+            for i, a in enumerate(measured)
+            for b in measured[i + 1 :]
+            if _distinct_quantity(a, b)
+        ]
+        if dual:
+            a, b = dual[0]
+            both = data[[x, a, b]].dropna()
+            if len(both) >= 4:
+                add(
+                    "dual_axis",
+                    "双纵轴（不同量纲）",
+                    "medium",
+                    f"{a} 与 {b} 单位不同（{_unit_of(a)} / {_unit_of(b)}），可各占一条纵轴；"
+                    "两条轴的比例独立可调，**曲线看起来同步不代表二者相关**，"
+                    "要论证关系请改用散点图",
+                    {"x": x, "y": [a, b], "right": b},
+                    4,
+                )
+
+        if measured and _strictly_ordered(data[x]) and _valid_count(data, [x, measured[0]]) >= 8:
+            add(
+                "spectral_derivative",
+                "响应导数 d/dλ",
+                "medium",
+                f"{x} 单调递增，可对 {len(measured)} 列求导以定位拐点与肩峰；"
+                "微分会放大噪声，若原始数据本身有抖动请先说明再使用",
+                {"x": x, "y": measured[:8]},
+                5,
+            )
+
+    # Peak tracking is a reduction, not a grid view: it needs a wavelength axis,
+    # a second swept parameter, and a response, and it deliberately does not
+    # require the grid to be complete, since a missing reading only costs
+    # resolution along one curve.
+    track = _peak_trackable(p, data)
+    if track:
+        add(
+            "peak_evolution",
+            "峰位与半高宽随参数演化",
+            "medium",
+            f"对每个 {track['param']} 取值在 {track['wave']} 上定位 {track['value']} 的极值，"
+            "得到峰位与半高宽两条曲线；这是把二维图压成一维趋势，"
+            "多峰或无清晰峰的行会被跳过并计数，请核对被跳过的角度/温度",
+            track,
+            6,
+        )
 
     error_added = False
     for err, info in p.error_columns.items():

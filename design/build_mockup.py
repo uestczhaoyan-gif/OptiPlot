@@ -13,14 +13,11 @@ root = here.parent
 idx = json.loads((here / "assets" / "index.json").read_text(encoding="utf-8"))
 
 TITLES, EXAMPLES = {}, {}
-for name in [
-    "sample_spectrum", "sample_beam_map", "sample_polarization", "sample_replicates",
-    "sample_explicit_error", "sample_devices", "sample_dense_scatter", "sample_workflow",
-]:
-    profile = analyze_file(root / "examples" / f"{name}.csv")
+for path in sorted((root / "examples").glob("*.csv")):
+    profile = analyze_file(path)
     for r in recommend(profile):
         TITLES.setdefault(r.id, r.title)
-        EXAMPLES.setdefault(r.id, name)
+        EXAMPLES.setdefault(r.id, path.stem)
 profile = analyze_file(root / "examples" / "sample_matrix.npy")
 for r in recommend(profile):
     TITLES.setdefault(r.id, r.title)

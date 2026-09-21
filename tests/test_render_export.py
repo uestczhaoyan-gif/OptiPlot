@@ -363,3 +363,141 @@ def test_every_figure_type_is_offered_somewhere():
         reachable |= {r.id for r in recommend(analyze_file(path))}
     unreachable = set(FIGURE_TYPES) - reachable
     assert not unreachable, f"registered but never recommended: {sorted(unreachable)}"
+
+
+# ── N5 group A: dual axis, derivative, peak tracking ───────────────
+
+
+def test_derivative_recovers_a_known_slope():
+    """d/dx of x^2 is 2x; a wrong axis spacing shows up immediately."""
+    x = np.linspace(1.0, 5.0, 41)
+    p = analyze_dataframe(
+        pd.DataFrame({"wavelength_nm": x, "T_signal": x**2, "R_signal": x**2 * 1.001})
+    )
+    r = next(x for x in recommend(p) if x.id == "spectral_derivative")
+    line = render(p, r).axes[0].lines[0]
+    assert np.allclose(line.get_ydata(), 2 * x, atol=1e-8)
+
+
+def test_derivative_is_not_offered_when_the_axis_repeats():
+    """np.gradient divides by the coordinate spacing; repeated drive points make
+    that zero, so the option must not appear at all."""
+    p = analyze_file(ROOT / "examples" / "sample_replicates.csv")
+    assert p.n_rows > 8
+    ids = {r.id for r in recommend(p)}
+    if "power_mW" in p.axis_columns and not p.repeated_x:
+        assert "spectral_derivative" in ids
+    repeated = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "wavelength_nm": np.repeat(np.linspace(1400.0, 1700.0, 20), 2),
+                "A_signal": np.arange(40, dtype=float),
+                "B_signal": np.arange(40, dtype=float) + 1,
+            }
+        )
+    )
+    assert "spectral_derivative" not in {r.id for r in recommend(repeated)}
+
+
+def test_peak_extraction_recovers_a_gaussian_centre_and_width():
+    from optiplot.render import _peak_and_fwhm
+
+    sigma = 25.0
+    wave = np.linspace(1400.0, 1800.0, 201)
+    value = np.exp(-((wave - 1580.0) ** 2) / (2 * sigma**2))
+    peak, width, is_max = _peak_and_fwhm(wave, value)
+    assert is_max and peak == pytest.approx(1580.0, abs=1.0)
+    assert width == pytest.approx(2.3548 * sigma, rel=0.02)
+
+
+def test_a_dip_is_not_confused_with_the_noise_floor_of_a_flat_curve():
+    """A reflectance dip on a flat pedestal has an interior maximum too: the
+    tallest noise spike. Only the deeper turning point is the resonance."""
+    from optiplot.render import _peak_and_fwhm
+
+    wave = np.linspace(1300.0, 1800.0, 41)
+    value = 1.0 - 0.62 * np.exp(-((wave - 1600.0) ** 2) / (2 * 55.0**2))
+    value += np.sin(wave * 12.9898) * 0.004  # deterministic pseudo-noise
+    peak, width, is_max = _peak_and_fwhm(wave, value)
+    assert is_max is False
+    assert peak == pytest.approx(1600.0, abs=6.0)
+    assert width == pytest.approx(2.3548 * 55.0, rel=0.05)
+
+
+def test_peak_on_the_scan_edge_is_reported_as_no_peak():
+    """A monotonic rise to the last wavelength is a truncated scan, and calling
+    that endpoint a resonance would report the instrument limit as physics."""
+    from optiplot.render import _peak_and_fwhm
+
+    wave = np.linspace(1400.0, 1800.0, 60)
+    peak, width, is_max = _peak_and_fwhm(wave, wave.copy())
+    assert np.isnan(peak) and np.isnan(width) and is_max is None
+
+
+def test_peak_evolution_tracks_the_blue_shift():
+    p = analyze_file(ROOT / "examples" / "sample_angle_resolved.csv")
+    r = next(x for x in recommend(p) if x.id == "peak_evolution")
+    assert r.encodings["param"] == "theta_deg"
+    ax = render(p, r).axes[0]
+    xs = ax.lines[0].get_xdata()
+    ys = ax.lines[0].get_ydata()
+    assert len(xs) >= 3 and ys[0] > ys[-1], "resonance should move to shorter wavelength"
+    assert np.all(np.diff(ys) < 0), "peak track should be monotonic for a linear shift"
+    # This example is an absorption dip, so reporting the tallest noise spike
+    # instead of the turning point would leave a monotone-looking but wrong track.
+    assert ys[0] == pytest.approx(1620.0, abs=12.5)
+    second = [a for a in render(p, r).axes if a is not ax]
+    assert second and second[0].lines, "FWHM trace missing from the twin axis"
+
+
+def test_peak_evolution_counts_skipped_settings():
+    from optiplot.render import _peak_and_fwhm
+
+    p = analyze_file(ROOT / "examples" / "sample_angle_resolved.csv")
+    r = next(x for x in recommend(p) if x.id == "peak_evolution")
+    rows = p.data[[r.encodings["param"], r.encodings["wave"], r.encodings["value"]]].dropna()
+    tracked = sum(
+        np.isfinite(_peak_and_fwhm(g[r.encodings["wave"]], g[r.encodings["value"]])[0])
+        for _, g in rows.groupby(r.encodings["param"])
+    )
+    ax = render(p, r).axes[0]
+    assert len(ax.lines[0].get_xdata()) == tracked
+
+
+def test_dual_axis_gives_each_series_its_own_scale():
+    p = analyze_file(ROOT / "examples" / "sample_liv_sweep.csv")
+    r = next(x for x in recommend(p) if x.id == "dual_axis")
+    ax = render(p, r).axes[0]
+    second = [a for a in ax.figure.axes if a is not ax]
+    assert second, "twinx axis missing"
+    assert ax.get_ylabel() != second[0].get_ylabel()
+    assert ax.get_ylim() != second[0].get_ylim()
+    # the two axis labels must be tinted to their own series
+    assert ax.yaxis.label.get_color() != second[0].yaxis.label.get_color()
+
+
+def test_dual_axis_is_not_offered_for_same_unit_columns():
+    """device_A and device_B belong on one axis; splitting them across two is how
+    a dual-axis plot invents agreement."""
+    p = analyze_file(ROOT / "examples" / "sample_spectrum.csv")
+    assert "dual_axis" not in {r.id for r in recommend(p)}
+
+
+def test_dual_axis_is_not_offered_across_frame_coordinates():
+    """x_um and intensity_au differ in unit, but the transverse coordinate of a
+    beam map is not a second response -- it is the axis the map is read on."""
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    assert "dual_axis" not in {r.id for r in recommend(p)}
+
+
+def test_new_types_are_medium_tier():
+    for name, sample in [
+        ("dual_axis", "sample_liv_sweep"),
+        ("spectral_derivative", "sample_spectrum"),
+        ("peak_evolution", "sample_angle_resolved"),
+    ]:
+        p = analyze_file(ROOT / "examples" / f"{sample}.csv")
+        found = next((x for x in recommend(p) if x.id == name), None)
+        assert found is not None, f"{name} not offered on {sample}"
+        assert found.tier == "medium", name
+        assert "请" in found.reason or "不" in found.reason, f"{name} states no caveat"

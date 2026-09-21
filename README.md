@@ -16,10 +16,10 @@ You import measurement data. OptiPlot profiles its structure, then proposes **ra
 
 - **Import** — CSV, TSV, whitespace-separated TXT, a chosen XLSX worksheet, NPY, and 1-D/2-D real-valued MAT (v4–v7.2). Headerless files and UTF-8/GB18030 text are supported.
 - **Profile** — numeric vs categorical variables, constants, identifier columns, missing and infinite values, angle units, scan axes, explicit error columns, within-group replicates, complete 2-D grids.
-- **17 figure types** — multi-spectrum lines, two-column difference, two-column ratio, min–max envelope, wavelength axis with a photon-energy conjugate, scatter with optional OLS, hexbin density, error bars, heatmap, filled contour, matrix heatmap, polar response, histogram, box with raw points, correlation matrix, data table, flow diagram.
+- **20 figure types** — multi-spectrum lines, two-column difference, two-column ratio, min–max envelope, wavelength axis with a photon-energy conjugate, derivative spectrum, dual-axis response pair, peak and FWHM versus a scan parameter, scatter with optional OLS, hexbin density, error bars, heatmap, filled contour, matrix heatmap, polar response, histogram, box with raw points, correlation matrix, data table, flow diagram.
 - **Style control** — 97 presentation parameters covering fonts and sizes, canvas in millimetres, spines, ticks, grid, markers, line styles, legend, colour palette, colour map and export options. Four cross-group presets (`journal`, `slide`, `poster`, `default`), and any configuration saves to a JSON file the whole group can share.
 - **Export** — 300 dpi PNG, editable SVG, PDF, TIFF; plus a reproducible ZIP containing the full imported table, drawing parameters, the resolved style, version record, SHA-256 checksum, a standalone Python script and all three image formats.
-- **Figure-type library** — 108 drawing recipes grouped by figure type, each stating the columns it needs and how to draw it. Deliberately free of citations: the plots are the product, so no DOI or evidence label appears under them. Separately, 25 bibliographic records document that this set of figure types came from reading real top-journal figures; see [literature provenance](docs/literature.md).
+- **Figure-type library** — 129 drawing recipes grouped by figure type, each stating the columns it needs and how to draw it. Deliberately free of citations: the plots are the product, so no DOI or evidence label appears under them. Separately, 25 bibliographic records document that this set of figure types came from reading real top-journal figures; see [literature provenance](docs/literature.md).
 - **Batch** — the command line uses the same recommender and renderer as the GUI.
 
 ## Quick start
@@ -121,9 +121,9 @@ macOS / Linux：安装依赖后运行 `python app.py`；Linux 需要系统的 `p
 
 - **数据导入**：CSV、TSV、空白分隔 TXT、XLSX 指定工作表、NPY、一维/二维实数 MAT（v4–v7.2）。支持无表头和 UTF-8/GB18030 文本。
 - **数据分析**：数值/分类变量、常量、编号、缺失值、无限值、角度单位、扫描轴、显式误差列、组内重复测量、完整二维网格。
-- **17 类画法**：多光谱曲线、两列差值、两列比值、多列极差包络、波长轴加光子能量副轴、散点与可选线性拟合、六边形分箱密度、误差棒、热图、等高线、矩阵热图、极坐标、直方图、箱线与原始点、相关矩阵、数据表、流程关系图。
+- **20 类画法**：多光谱曲线、两列差值、两列比值、多列极差包络、波长轴加光子能量副轴、导数谱、双 Y 轴响应、峰位与半高宽随扫描参量演化、散点与可选线性拟合、六边形分箱密度、误差棒、热图、等高线、矩阵热图、极坐标、直方图、箱线与原始点、相关矩阵、数据表、流程关系图。
 - **GUI**：多候选预览、推荐理由、数据检查、列映射、交互缩放平移、单栏/双栏/汇报尺寸。
-- **图型子类库**：108 条画法配方，按图型归类，各自写明需要的数据列与绘制方法。**刻意不含引用信息**——图本身就是产品，每张图下面不挂 DOI 或证据级别。另有 25 篇题录在[文献调研与来源](docs/literature.md)中说明这套图型来自对真实顶刊图表的阅读。
+- **图型子类库**：129 条画法配方，按图型归类，各自写明需要的数据列与绘制方法。**刻意不含引用信息**——图本身就是产品，每张图下面不挂 DOI 或证据级别。另有 25 篇题录在[文献调研与来源](docs/literature.md)中说明这套图型来自对真实顶刊图表的阅读。
 - **样式控制**：97 个呈现参数，覆盖字体与字号、毫米级画布尺寸、脊线、刻度、网格、标记、线型、图例、调色板、色带与导出选项。四个跨组预设（`journal` / `slide` / `poster` / `default`），任何配置都能存成 JSON 文件供全组共享。
 - **导出**：300 dpi PNG、可编辑 SVG、PDF、TIFF；ZIP 包含完整导入表、绘图参数、解析后的完整样式、版本记录、SHA-256、独立运行的 Python 脚本和三种图片。
 - **批处理**：命令行使用同一推荐和渲染引擎；`research/collect_openalex.py` 为开发期题录候选采集器，支持分页、缓存和去重，不属于产品运行时。
