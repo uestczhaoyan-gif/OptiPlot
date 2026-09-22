@@ -6,6 +6,7 @@ attaching false authority to a curve.
 """
 
 import numpy as np
+import pandas as pd
 import pytest
 from optiplot.models import (
     MODELS,
@@ -206,3 +207,130 @@ def test_model_ids_are_stable_enough_to_store_in_a_recipe():
         "drude_lorentz",
         "malus",
     ]
+
+
+def test_a_parameter_beyond_the_scan_is_called_out_as_a_constant():
+    """A straight decline fitted as a decay puts the time constant four orders
+    away from anything this scan could measure, and the figure must say so rather
+    than print tau=3.5e4 as a lifetime."""
+    x = np.linspace(0.0, 8.0, 60)
+    r = fit("single_exponential", x, 1.0 - 0.001 * x)
+    assert r.params["tau"] > 40 * _span_of(x)
+    assert any("只起常数作用" in n for n in r.notes), (r.label(), r.notes)
+    # a genuine second component inside the scan is not flagged
+    honest = fit("double_exponential", x, 0.05 + 1.8 * np.exp(-x / 0.7) + 0.6 * np.exp(-x / 4.5))
+    assert not any("只起常数作用" in n for n in honest.notes), honest.notes
+
+
+def _span_of(x):
+    return float(np.max(x) - np.min(x))
+
+
+# ── the figure ─────────────────────────────────────────────────────
+import subprocess
+import sys
+import zipfile
+
+from optiplot import analyze_dataframe, recommend
+from optiplot.export import export_bundle
+from optiplot.render import FIT_CHOICES, render
+
+
+def decay_profile():
+    x = np.linspace(0.0, 8.0, 60)
+    y = 0.05 + 2.4 * np.exp(-x / 1.9) + NOISE[:60]
+    return analyze_dataframe(pd.DataFrame({"decay_time_ns": x, "photoluminescence": y}))
+
+
+def pick(profile, identifier):
+    return next(r for r in recommend(profile) if r.id == identifier)
+
+
+def test_a_named_model_brings_its_residual_panel():
+    p = decay_profile()
+    fig = render(p, pick(p, "scatter_fit"), options={"fit": "single_exponential"})
+    assert len(fig.axes) == 2
+    main, strip = fig.axes
+    assert len(main.lines) == 1, "the fit curve is missing"
+    assert "R²=" in main.lines[0].get_label()
+    assert len(strip.get_xticks()) and strip.get_ylabel() == "残差"
+    # the residuals are drawn as one stem per measurement, at the measured x
+    segments = strip.collections[0].get_segments()
+    assert len(segments) == 60
+    assert all(float(s[0][1]) == 0.0 for s in segments), "stems must start at zero"
+
+
+def test_the_shared_axis_is_labelled_once():
+    p = decay_profile()
+    fig = render(p, pick(p, "spectrum_lines"), options={"fit": "single_exponential"})
+    main, strip = fig.axes
+    assert main.get_xlabel() == ""
+    assert not any(l.get_visible() for l in main.get_xticklabels())
+    assert strip.get_xlabel() == "decay_time_ns"
+
+
+def test_a_linear_fit_still_gets_no_panel():
+    p = decay_profile()
+    fig = render(p, pick(p, "scatter_fit"), options={"fit": "linear"})
+    assert len(fig.axes) == 1
+
+
+def test_a_misspelled_model_is_refused_not_dropped():
+    p = decay_profile()
+    with pytest.raises(ValueError, match="未知拟合选项"):
+        render(p, pick(p, "scatter_fit"), options={"fit": "typo_exponential"})
+
+
+def test_a_curve_family_refuses_one_fit_over_the_top_of_it():
+    """Fitting a single curve through fifteen angle-resolved spectra would report
+    one line shape for a set that is defined by how it varies."""
+    theta = np.repeat(np.linspace(0.0, 70.0, 8), 40)
+    lam = np.tile(np.linspace(1300.0, 1700.0, 40), 8)
+    p = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "theta_deg": theta,
+                "wavelength_nm": lam,
+                "reflectance": 1.0 - 0.5 * np.exp(-((lam - 1500.0 - 4 * theta) ** 2) / 2000.0),
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="不能整体拟合"):
+        render(p, pick(p, "spectrum_lines"), options={"fit": "gaussian"})
+
+
+def test_a_model_fit_survives_the_reproducible_bundle(tmp_path):
+    """The bundle copies render.py and whatever it imports by bare name; a model
+    fit is the case that needs models.py alongside it."""
+    p = decay_profile()
+    bundle = export_bundle(
+        p, pick(p, "scatter_fit"), tmp_path / "f.zip", {"fit": "single_exponential"}
+    )
+    out = tmp_path / "standalone"
+    out.mkdir()
+    with zipfile.ZipFile(bundle) as z:
+        assert "models.py" in z.namelist()
+        z.extractall(out)
+    subprocess.run(
+        [sys.executable, str(out / "render_plot.py")],
+        cwd=out,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (out / "reproduced.png").stat().st_size > 1000
+
+
+def test_every_offered_fit_choice_either_draws_or_refuses_loudly():
+    """The list the interface offers must not contain an entry that quietly draws
+    nothing. A model that cannot apply to this data says why instead."""
+    assert FIT_CHOICES[0] == "none"
+    p = decay_profile()
+    for choice in FIT_CHOICES[1:]:
+        try:
+            fig = render(p, pick(p, "scatter_fit"), options={"fit": choice})
+        except ValueError as exc:
+            assert str(exc), choice
+            continue
+        assert len(fig.axes) == (1 if choice == "linear" else 2), choice
+        assert "R²=" in fig.axes[0].lines[0].get_label(), choice

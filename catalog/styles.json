@@ -679,6 +679,24 @@
   "recipe": "仅用用户定义的示意坐标并明确标注概念图；原图位置表达定性关系，禁止当实验数据拟合。"
  },
  {
+  "id": "scatter_fit-17",
+  "label": "Malus 定律与消光比",
+  "patterns": [
+   "scatter_fit"
+  ],
+  "data_schema": "analyzer_angle_deg, output_power",
+  "recipe": "先确认角度单位（模型按度或弧度参与拟合，选错单位时曲线仍能贴合但阶数会翻倍）；消光比要由同一轮扫描的最大最小值直接给出，不要用拟合参数相减再相除。"
+ },
+ {
+  "id": "scatter_fit-18",
+  "label": "拟合结果的报告口径",
+  "patterns": [
+   "scatter_fit"
+  ],
+  "data_schema": "x, y",
+  "recipe": "报告参数时同时给出扫描范围与 R²，并注明本项目不给参数置信区间——协方差假设的是独立同分布高斯噪声，而仪器读数的噪声通常不是。"
+ },
+ {
   "id": "spectral_derivative-01",
   "label": "吸收边导数定位",
   "patterns": [
@@ -1172,6 +1190,42 @@
   ],
   "data_schema": "temperature_K, wavelength_nm, transmittance",
   "recipe": "同一器件在多个温度下的透射谱叠在一张图上；曲线数超过调色板容量时改用连续色带按温度排序着色，否则两条不同温度的曲线会共用同一颜色而被读成重复测量。"
+ },
+ {
+  "id": "spectrum_lines-44",
+  "label": "时间分辨衰变的单指数拟合",
+  "patterns": [
+   "spectrum_lines"
+  ],
+  "data_schema": "delay_ps, photoluminescence",
+  "recipe": "勾选单指数后必须同时看残差面板：残差若在后段成系统鼓起，说明衰减不是单指数或基线没扣对，此时报告出的 τ 是拟合的产物而不是载流子寿命。"
+ },
+ {
+  "id": "spectrum_lines-45",
+  "label": "双指数分量的取舍",
+  "patterns": [
+   "spectrum_lines"
+  ],
+  "data_schema": "delay_ns, intensity",
+  "recipe": "第二个分量只有在单指数残差里出现结构时才值得引入；引入后 τ₂ 落到扫描范围之外（图注会明说），它实际起的是常数作用，应退回单指数。"
+ },
+ {
+  "id": "spectrum_lines-46",
+  "label": "高斯还是洛伦兹线型",
+  "patterns": [
+   "spectrum_lines"
+  ],
+  "data_schema": "wavelength_nm, transmission",
+  "recipe": "两者在峰顶几乎同形、在两翼分明不同，因此判据只能看残差的两翼符号；只用 R² 比较会得出反直觉的结论，因为 R² 被峰顶主导。"
+ },
+ {
+  "id": "spectrum_lines-47",
+  "label": "折射率色散的振子位置",
+  "patterns": [
+   "spectrum_lines"
+  ],
+  "data_schema": "wavelength_um, refractive_index",
+  "recipe": "单振子色散式只有在数据接近该振子时才能同时定出 n∞、S 与 λ₀；远离极点时曲线仍然贴合而 λ₀ 会乱跑，图注里的量纲判据就是为这种情况准备的。"
  },
  {
   "id": "stacked_curves-01",

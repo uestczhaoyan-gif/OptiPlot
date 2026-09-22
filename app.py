@@ -12,7 +12,7 @@ os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".cache" / "matplotlib"))
 from PIL import Image, ImageTk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from optiplot import analyze_file, recommend
-from optiplot.render import render
+from optiplot.render import render, FIT_CHOICES, FITTABLE
 from optiplot.export import export_bundle
 
 BG = "#F1F5F9"
@@ -181,7 +181,9 @@ class App(tk.Tk):
         self.error = tk.StringVar(value="sd")
         for label, var, values, width in [
             ("尺寸", self.size, ["single", "double", "slide"], 8),
-            ("拟合", self.fit, ["none", "linear"], 7),
+            # straight from the renderer, so the list can never offer a fit the
+            # engine would silently ignore
+            ("拟合", self.fit, list(FIT_CHOICES), 18),
             ("角度", self.angle, ["deg", "rad"], 5),
             ("重复测量误差", self.error, ["sd", "sem"], 5),
         ]:
@@ -426,7 +428,12 @@ class App(tk.Tk):
         self.toolbar.pack(side="bottom", fill="x")
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
         self.toolbar.update()
-        self.status.set(f"当前：{self.active.title}  |  {self.active.encodings}")
+        hint = (
+            ""
+            if self.fit.get() == "none" or self.active.id in FITTABLE
+            else "  |  此图型不接受拟合，当前拟合选择未生效"
+        )
+        self.status.set(f"当前：{self.active.title}  |  {self.active.encodings}" + hint)
 
     def export_figure(self):
         if not self.active:

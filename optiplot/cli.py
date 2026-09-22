@@ -5,7 +5,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 from .core import analyze_file, recommend
-from .render import render
+from .render import render, FIT_CHOICES
 from .export import export_bundle
 
 
@@ -22,6 +22,12 @@ def main(argv=None):
         "--bundle",
         action="store_true",
         help="Export a reproducible ZIP for the highest-ranked choice",
+    )
+    parser.add_argument(
+        "--fit",
+        default="none",
+        choices=FIT_CHOICES,
+        help="Overlay a named model and its residual panel; never applied on its own",
     )
     args = parser.parse_args(argv)
     if not 1 <= args.top <= 8:
@@ -41,11 +47,12 @@ def main(argv=None):
         (args.out / "recommendations.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        options = {"size": "double", "fit": args.fit}
         for r in rs[: args.top]:
             for ext in ["png", "svg", "pdf"]:
-                render(p, r, args.out / f"{r.id}.{ext}", options={"size": "double"}).clear()
+                render(p, r, args.out / f"{r.id}.{ext}", options=options).clear()
         if args.bundle and rs:
-            export_bundle(p, rs[0], args.out / "reproducible.zip")
+            export_bundle(p, rs[0], args.out / "reproducible.zip", options=options)
         print(f"{len(rs[:args.top])} figures exported to {args.out.resolve()}")
     except (ValueError, OSError) as exc:
         parser.exit(2, f"OptiPlot: {exc}\n")

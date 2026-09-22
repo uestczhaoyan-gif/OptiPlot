@@ -38,6 +38,7 @@ class FitModel:
     x_hint: tuple[str, ...] = ()
     y_hint: tuple[str, ...] = ()
     caveat: str = ""
+    x_scaled: tuple[str, ...] = ()
 
 
 def _span(x):
@@ -130,6 +131,7 @@ MODELS: tuple[FitModel, ...] = (
         min_points=4,
         x_hint=("time", "delay", "t_ns", "t_ps", "duration"),
         y_hint=("decay", "lifetime", "intensity", "signal", "photoluminescence"),
+        x_scaled=("tau",),
         caveat="τ 只有在数据跨过数个 τ 且末端真正趋平时才可辨识；扫描在衰减完成前截断时，C 会把 τ 拉长。",
     ),
     FitModel(
@@ -152,6 +154,7 @@ MODELS: tuple[FitModel, ...] = (
         min_points=8,
         x_hint=("time", "delay", "t_ns", "t_ps", "duration"),
         y_hint=("decay", "lifetime", "intensity", "signal", "photoluminescence"),
+        x_scaled=("tau1", "tau2"),
         caveat="两个时间常数接近时不可分辨；先确认单指数残差是否已有结构，再决定要不要第二个分量。",
     ),
     FitModel(
@@ -182,6 +185,7 @@ MODELS: tuple[FitModel, ...] = (
         min_points=6,
         x_hint=("wavelength", "frequency", "angle", "detuning"),
         y_hint=("intensity", "transmission", "reflectance", "absorbance", "signal"),
+        x_scaled=("mu", "sigma"),
         caveat="基线 C 与峰高相关；峰宽接近采样间隔时 σ 由网格决定而不是由样品决定。",
     ),
     FitModel(
@@ -198,6 +202,7 @@ MODELS: tuple[FitModel, ...] = (
         min_points=6,
         x_hint=("wavelength", "frequency", "angle", "detuning"),
         y_hint=("intensity", "transmission", "reflectance", "absorbance", "signal"),
+        x_scaled=("mu", "gamma"),
         caveat="基线 C 与峰高相关；两翼若被相邻峰占据，γ 会吸收邻峰强度。",
     ),
     FitModel(
@@ -211,6 +216,7 @@ MODELS: tuple[FitModel, ...] = (
         x_positive=True,
         x_hint=("wavelength", "lambda", "nm"),
         y_hint=("refractive", "index", "n", "epsilon", "dielectric"),
+        x_scaled=("lambda0",),
         caveat="远离极点时只有 n∞ 与 S·λ₀² 的组合可辨识；单独的 λ₀ 要求数据接近该极点，否则曲线看起来对而参数无意义。",
     ),
     FitModel(
@@ -259,7 +265,7 @@ class FitResult:
         return [self.params[name] for name in self.model.parameters]
 
     def parameter_text(self) -> str:
-        return ", ".join(f"{k}={v:.6g}" for k, v in self.params.items())
+        return ", ".join(f"{k}={v:.4g}" for k, v in self.params.items())
 
     def label(self) -> str:
         return f"{self.model.label}: {self.parameter_text()}; R²={self.r2:.3f}"
@@ -400,6 +406,7 @@ def _inside(guess, lower, upper):
 
 
 def _package(model, x, y, popt, pcov, x_factor, notes):
+    span_x = float(np.nanmax(x) - np.nanmin(x)) or 1.0
     predicted = model.evaluate(x, *popt, x_factor=x_factor)
     residual = y - predicted
     total = float(np.sum((y - y.mean()) ** 2))
@@ -409,6 +416,13 @@ def _package(model, x, y, popt, pcov, x_factor, notes):
         notes.append("响应列没有变化，R² 无定义。")
     if not np.all(np.isfinite(pcov)):
         notes.append("参数协方差无法估计：模型可能过参数化或存在简并，参数值不应作为唯一解引用。")
+    for name in model.x_scaled:
+        value = float(popt[model.parameters.index(name)])
+        if abs(value) > 10.0 * span_x:
+            notes.append(
+                f"参数 {name}={value:.4g} 比扫描范围（{span_x:.4g}）大一个数量级以上，"
+                "它在这批数据里只起常数作用，不是被测量出来的量。"
+            )
     if np.isfinite(r2) and r2 < 0.8:
         notes.append(f"R²={r2:.3f} 偏低，模型形状与数据不符，请检查残差面板。")
     return FitResult(

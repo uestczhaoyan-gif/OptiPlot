@@ -12,8 +12,16 @@ from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
 try:  # normal import, as part of the optiplot package
     from .style import EXPORT_FORMATS, Style
+    from .models import MODEL_BY_ID, fit_model, model_for
 except ImportError:  # standalone copy inside an exported reproducible bundle
     from style import EXPORT_FORMATS, Style
+    from models import MODEL_BY_ID, fit_model, model_for
+
+_MODEL_IDS = frozenset(MODEL_BY_ID)
+FIT_CHOICES = ("none", "linear", *MODEL_BY_ID)
+# Types a fit can be applied to. The rest ignore the option, so an interface has
+# to say so rather than leave a control that does nothing look like it worked.
+FITTABLE = ("scatter_fit", "spectrum_lines")
 
 COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 # The authoritative list of drawable figure types. A new branch in _draw is not
@@ -148,6 +156,42 @@ class Peak(NamedTuple):
 NO_PEAK = Peak(np.nan, np.nan, np.nan, None, np.nan, np.nan, np.nan)
 
 
+def _fit_overlay(ax, residual_ax, df, xname, yname, choice, palette, style, x_factor=1.0):
+    """Draw a named model over the data, and its residuals in the strip below.
+
+    The strip is not an option the caller can drop: a model that looks right is
+    precisely the case where the difference has to be visible, and a residual
+    column with structure in it is the only cheap signal that the shape is wrong.
+    """
+    d = _finite(df, [xname, yname])
+    x, y = d[xname].to_numpy(), d[yname].to_numpy()
+    result = fit_model(model_for(choice), x, y, x_factor=x_factor)
+    grid = np.linspace(float(np.nanmin(x)), float(np.nanmax(x)), 300)
+    colour = palette[1 % len(palette)]
+    ax.plot(
+        grid,
+        result.curve(grid),
+        color=colour,
+        linewidth=max(0.9, float(style.line_width) * 0.85),
+        label=result.label(),
+        zorder=max(int(style.series_zorder) + 1, 3),
+    )
+    if residual_ax is None:
+        return result
+    residual_ax.axhline(0.0, color="#7A94AB", lw=0.9, ls="--", zorder=1)
+    residual_ax.vlines(x, 0.0, result.residual, color=colour, linewidth=0.9, zorder=2)
+    residual_ax.set_ylabel("残差", fontsize=style.resolved_font_size() * 0.9)
+    residual_ax.tick_params(labelsize=style.resolved_font_size() * 0.85)
+    if result.notes:
+        residual_ax.set_title(
+            "；".join(result.notes),
+            loc="left",
+            fontsize=style.resolved_font_size() * 0.85,
+            color="#B3261E",
+        )
+    return result
+
+
 def _peak_and_fwhm(wave, value) -> Peak:
     """Locate the interior extremum of a curve and its full width at half maximum.
 
@@ -248,12 +292,32 @@ def render(profile, rec, output=None, options=None, style=None):
     enc = dict(rec.encodings)
     enc.update(opts.get("encodings", {}))
     df = profile.data if isinstance(profile.data, pd.DataFrame) else pd.DataFrame(profile.data)
+    fit_choice = str(opts.get("fit", enc.get("fit", "none"))).strip()
+    if fit_choice not in FIT_CHOICES:
+        # A misspelled model must not degrade into "no fit": the user asked for a
+        # curve through the data and would receive a plot that looks answered.
+        raise ValueError(
+            f"未知拟合选项 {fit_choice!r}；可选 none、linear、" + "、".join(MODEL_BY_ID)
+        )
     with matplotlib.rc_context(style.rc_params()):
         fig = Figure(
             figsize=style.size_inches(), dpi=style.preview_dpi, **style.figure_kwargs()
         )
-        ax = fig.add_subplot(111, projection="polar" if rec.id == "polar" else None)
-        _draw(ax, fig, df, rec.id, enc, opts, style)
+        if fit_choice in _MODEL_IDS:
+            # A named model always brings its residuals: a curve that looks right
+            # is exactly the case where the reader needs the difference shown.
+            ax, residual_ax = fig.subplots(2, 1, height_ratios=[3.2, 1.0], sharex=True)
+        else:
+            ax = fig.add_subplot(111, projection="polar" if rec.id == "polar" else None)
+            residual_ax = None
+        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax)
+        if residual_ax is not None:
+            # One row of x labels for one shared axis: the strip underneath carries
+            # them, as it does in every published residual panel.
+            for label in ax.get_xticklabels():
+                label.set_visible(False)
+            residual_ax.set_xlabel(ax.get_xlabel() or "")
+            ax.set_xlabel("")
         if opts.get("title"):
             ax.set_title(opts["title"], pad=14, loc="left")
         if opts.get("xlabel"):
@@ -280,10 +344,13 @@ def render(profile, rec, output=None, options=None, style=None):
         # is present so it does not print exponents as fixed decimals.
         style.configure_axes(ax, rec.id)
         for child in fig.axes:
-            if child is not ax:
-                # A twin shares the frame, so it takes the same tick and limit
-                # treatment; gridding it would print a second set of lines.
-                style.configure_axes(child, rec.id, grid=False)
+            if child in (ax, residual_ax):
+                continue
+            # A twin shares the frame, so it takes the same tick and limit
+            # treatment; gridding it would print a second set of lines. The
+            # residual strip is skipped entirely: a manual y limit belongs to the
+            # data axis, and applying it here would crop the residuals away.
+            style.configure_axes(child, rec.id, grid=False)
         style.apply_margins(fig)
         fig.optiplot_encodings = enc
         style.bake_into(fig)
@@ -300,10 +367,12 @@ def render(profile, rec, output=None, options=None, style=None):
         return fig
 
 
-def _draw(ax, fig, df, kind, e, opts, style):
+def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None):
     palette = style.colors
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
+        if str(opts.get("fit", e.get("fit", "none"))) in _MODEL_IDS:
+            raise ValueError("分组曲线族不能整体拟合；请一次只画一条曲线，或先按参数分开。")
         group = e["group"]
         sub_enc = {k: v for k, v in e.items() if k != "group"}
         levels = list(df.dropna(subset=[group]).groupby(group, sort=False, observed=True))
@@ -343,9 +412,25 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 label=yname,
                 **style.series_style(i),
             )
+        choice = str(opts.get("fit", e.get("fit", "none")))
+        if choice in _MODEL_IDS:
+            if len(ys) != 1:
+                raise ValueError("模型拟合一次只能作用于一条曲线，请先只选一个响应列。")
+            _fit_overlay(
+                ax,
+                residual_ax,
+                _finite(df, [xname, ys[0]]),
+                xname,
+                ys[0],
+                choice,
+                palette,
+                style,
+                x_factor=math.pi / 180.0
+                if str(opts.get("angle_unit", "deg")) == "deg"
+                else 1.0,
+            )
         ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
-        if len(ys) > 1:
-            _legend(ax, style)
+        _legend(ax, style)
     elif kind == "peak_annotation":
         xname = e["x"]
         ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
@@ -662,6 +747,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
         _legend(ax, style, handles=handles)
     elif kind in ["scatter_fit", "density"]:
         xname, yname = e["x"], e["y"]
+        choice = str(opts.get("fit", e.get("fit", "none")))
         d = _finite(df, [xname, yname])
         x, y = d[xname].to_numpy(), d[yname].to_numpy()
         if kind == "density":
@@ -681,7 +767,7 @@ def _draw(ax, fig, df, kind, e, opts, style):
                 rasterized=len(d) > style.rasterize_above,
                 zorder=style.series_zorder,
             )
-            if opts.get("fit", e.get("fit", "none")) == "linear":
+            if choice == "linear":
                 if len(d) < 3 or np.unique(x).size < 2:
                     raise ValueError("线性拟合至少需要 3 个点及两个不同的 X 值。")
                 coef = np.polyfit(x, y, 1)
@@ -694,6 +780,9 @@ def _draw(ax, fig, df, kind, e, opts, style):
                     color=palette[1 % len(palette)],
                     label=f"OLS: y={coef[0]:.3g}x{coef[1]:+.3g}; R²={r2:.3f}",
                 )
+                _legend(ax, style)
+            elif choice in _MODEL_IDS:
+                _fit_overlay(ax, residual_ax, d, xname, yname, choice, palette, style)
                 _legend(ax, style)
         ax.set(xlabel=xname, ylabel=yname)
     elif kind == "errorbar":

@@ -61,10 +61,12 @@ print('Reproduced PNG, SVG and PDF')
         z.writestr(
             "rendering.py", Path(__file__).with_name("render.py").read_text(encoding="utf-8-sig")
         )
-        # render.py imports Style; the bundle has to carry it or replay fails.
-        z.writestr(
-            "style.py", Path(__file__).with_name("style.py").read_text(encoding="utf-8-sig")
-        )
+        # render.py imports these by bare name, so the bundle has to carry each one
+        # or replay fails on the caller's machine rather than ours.
+        for module in ("style", "models"):
+            z.writestr(
+                module + ".py", Path(__file__).with_name(module + ".py").read_text(encoding="utf-8-sig")
+            )
         z.writestr(
             "requirements.txt", "\n".join(f"{p}=={v}" for p, v in recipe["versions"].items())
         )
