@@ -462,6 +462,60 @@
   "recipe": "自动位移台丢点会留下整行或整列空白；先确认空白是丢点还是样品本身没有响应，两者在热图上看起来一样但结论完全相反。"
  },
  {
+  "id": "heatmap-11",
+  "label": "缺测格涂灰而不是留白",
+  "patterns": [
+   "heatmap"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "留白与色带低端的颜色可能相同，读者会把没测的地方读成低值；missing_fill 给缺测格一个不可能属于色带的颜色，前提是色带本身不含该灰阶。"
+ },
+ {
+  "id": "heatmap_contours-01",
+  "label": "模式场叠加结构等值线",
+  "patterns": [
+   "heatmap_contours"
+  ],
+  "data_schema": "x_um, y_um, field",
+  "recipe": "颜色保留每个格点的实测值，等值线只标出各等值面的经过位置；线的位置由相邻格点插值得到，因此不能把两线之间的区域当作已测，需要数值时看色标而不是数线条。"
+ },
+ {
+  "id": "heatmap_contours-02",
+  "label": "光束质量图的等值线间隔",
+  "patterns": [
+   "heatmap_contours"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "等值线条数由 contour_levels 决定，与色标层数共用；光束尾部很平，层数一多会在低值区糊成一片，此时应减少层数或改用对数色标。"
+ },
+ {
+  "id": "heatmap_contours-03",
+  "label": "顺序色带上的等值线颜色",
+  "patterns": [
+   "heatmap_contours"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "顺序色带大部分面积偏暗，等值线必须用浅色才看得见；发散热色带中部偏亮，改用深色。auto 就是按是否跨零来选的，跨零时深色更稳。"
+ },
+ {
+  "id": "heatmap_marginals-01",
+  "label": "光束剖面与二维分布同图",
+  "patterns": [
+   "heatmap_marginals"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "上、右两条剖面是沿另一轴求均值，用来判断光束是否散光；均值把整列起伏压成一个数，看离散程度要回到热图，别用剖面读峰值功率。"
+ },
+ {
+  "id": "heatmap_marginals-02",
+  "label": "为什么只有两条剖面",
+  "patterns": [
+   "heatmap_marginals"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "上边与下边是同一条曲线的重复，左边与右边同理，因此只画上与右；若确实要四边，应让其中一对显示分位数而不是再画一遍均值。"
+ },
+ {
   "id": "peak_annotation-01",
   "label": "激光峰值波长与半高宽读数",
   "patterns": [

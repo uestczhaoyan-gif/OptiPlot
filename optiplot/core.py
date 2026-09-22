@@ -691,6 +691,24 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             enc.copy(),
             1,
         )
+        add(
+            "heatmap_contours",
+            "热图叠加等高线",
+            "medium",
+            "颜色保留每个格点的实测值，等高线只标出Levels 的经过位置；"
+            "线的位置由采样点间插值得到，因此不能把两条线之间的区域当作已测",
+            enc.copy(),
+            1,
+        )
+        add(
+            "heatmap_marginals",
+            "热图加边缘剖面",
+            "medium",
+            "在主图上方与右方各给一条沿另一轴求均值的剖面；"
+            "均值会把整列的起伏压成一个数，看离散程度请回到热图或改用投影的分位数",
+            enc.copy(),
+            1,
+        )
     else:
         partial = _partial_grid(data, eligible)
         if partial:

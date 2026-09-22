@@ -541,6 +541,37 @@ def test_a_scatter_cloud_is_not_mistaken_for_a_grid_with_holes():
     assert "heatmap" not in {r.id for r in recommend(p)}
 
 
+def test_marginal_profiles_are_the_column_and_row_means():
+    """The panels claim to be means; a profile that is actually a max or a slice
+    would read as the same figure and say something entirely different."""
+    x, y = np.meshgrid(np.linspace(-3.0, 3.0, 9), np.linspace(-2.0, 2.0, 7))
+    z = np.exp(-(x**2 / 6.0 + y**2 / 2.0))
+    p = analyze_dataframe(
+        pd.DataFrame({"x_um": x.ravel(), "y_um": y.ravel(), "field_au": z.ravel()})
+    )
+    rec = next(r for r in recommend(p) if r.id == "heatmap_marginals")
+    fig = render(p, rec)
+    assert len(fig.axes) == 4, "map, two profiles and the colour bar"
+    ax, top, right = fig.axes[0], fig.axes[1], fig.axes[2]
+    assert top.lines[0].get_ydata() == pytest.approx(z.mean(axis=0), abs=1e-9)
+    assert right.lines[0].get_xdata() == pytest.approx(z.mean(axis=1), abs=1e-9)
+    assert top.lines[0].get_xdata() == pytest.approx(np.linspace(-3.0, 3.0, 9))
+    # each caption sits on the axis carrying that profile's own values
+    assert "y_um" in top.get_ylabel() and top.get_xlabel() == ""
+    assert "x_um" in right.get_xlabel()
+    # the shared axes must still line up after the colour bar takes its column
+    assert ax.get_ylim() == pytest.approx(right.get_ylim())
+    assert ax.get_xlim() == pytest.approx(top.get_xlim())
+
+
+def test_a_surface_and_its_contours_are_both_drawn():
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    rec = next(r for r in recommend(p) if r.id == "heatmap_contours")
+    ax = render(p, rec).axes[0]
+    assert len(ax.collections) == 2, "expected a pcolormesh and a contour set"
+    assert ax.collections[1].get_paths(), "contour lines missing"
+
+
 def test_dual_axis_gives_each_series_its_own_scale():
     p = analyze_file(ROOT / "examples" / "sample_liv_sweep.csv")
     r = next(x for x in recommend(p) if x.id == "dual_axis")

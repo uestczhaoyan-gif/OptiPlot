@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 
 from matplotlib import font_manager
+from matplotlib.colors import is_color_like
 
 # Curated starting points. Any installed font family name is also accepted.
 FAMILY_PRESETS = {
@@ -134,6 +135,10 @@ MARKER_FILLS = ("full", "none", "left", "right", "bottom", "top")
 # "flat" is a legal pcolormesh value but needs coordinates one larger than the
 # data in every dimension, which a measured grid never is - so it is not offered.
 SHADINGS = ("auto", "nearest", "gouraud")
+# What an unmeasured cell is painted. "none" leaves the axes background, which is
+# indistinguishable from a value that happens to sit at the bottom of the colour
+# scale on some maps; a named grey says "nothing was measured here" out loud.
+MISSING_FILLS = ("none", "grey", "lightgrey", "dimgrey", "white")
 # Matplotlib marker codes worth exposing for optics plots; the full set is on
 # the docs page but these are the ones that survive small print sizes.
 MARKERS = (
@@ -295,6 +300,10 @@ class Style:
     contour_levels: int = 14
     hexbin_gridsize: int = 45
     image_shading: str = "nearest"
+    contour_labels: bool = False
+    contour_line_color: str = "auto"
+    missing_fill: str = "none"
+    marginal_height: float = 0.28
     colorbar_thickness: float = 0.046
     colorbar_pad: float = 0.03
     fill_difference: bool = False
@@ -435,6 +444,16 @@ class Style:
             raise ValueError(f"hexbin_gridsize 需在 3–200 之间，当前 {self.hexbin_gridsize}")
         if self.image_shading not in SHADINGS:
             raise ValueError(f"image_shading 需是 {'/'.join(SHADINGS)} 之一")
+        if self.missing_fill not in MISSING_FILLS:
+            raise ValueError(f"missing_fill 需是 {'/'.join(MISSING_FILLS)} 之一")
+        if self.contour_line_color != "auto" and not is_color_like(self.contour_line_color):
+            raise ValueError(
+                f"contour_line_color 需是 auto 或 Matplotlib 认识的颜色，当前 {self.contour_line_color!r}"
+            )
+        if not 0.05 <= float(self.marginal_height) <= 0.8:
+            raise ValueError(
+                f"marginal_height 需在 0.05–0.8 之间（边缘剖面占主图的比例），当前 {self.marginal_height}"
+            )
         if not 0.005 <= float(self.colorbar_thickness) <= 0.3:
             raise ValueError(f"colorbar_thickness 需在 0.005–0.3 之间，当前 {self.colorbar_thickness}")
         if not 0.0 <= float(self.colorbar_pad) <= 0.5:

@@ -361,6 +361,8 @@ def test_grid_under_data_maps_to_axisbelow():
 # and a numeric xlim are meaningless or actively wrong on them.
 AXES_LEFT_ALONE = {
     "heatmap",
+    "heatmap_contours",
+    "heatmap_marginals",
     "contour",
     "matrix_heatmap",
     "polar",
@@ -410,6 +412,69 @@ def test_y_zero_centered_makes_the_range_symmetric():
 def test_reversed_axes():
     ax = drawn({"x_reverse": True})[1]
     assert ax.get_xlim()[0] > ax.get_xlim()[1]
+
+
+def surface(kind="heatmap", holes=False):
+    x, y = np.meshgrid(np.linspace(-4.0, 4.0, 21), np.linspace(-3.0, 3.0, 15))
+    z = np.exp(-(x**2 / 4.0 + y**2) / 2.0)
+    frame = pd.DataFrame(
+        {"x_um": x.ravel(), "y_um": y.ravel(), "intensity_au": z.ravel()}
+    )
+    if holes:
+        frame.loc[[7, 30, 91], "intensity_au"] = np.nan
+    p = analyze_dataframe(frame)
+    return p, next(r for r in recommend(p) if r.id == kind)
+
+
+def test_contour_labels_reach_the_figure():
+    p, rec = surface("heatmap_contours")
+    bare = render(p, rec, style=Style(contour_labels=False)).axes[0]
+    marked = render(p, rec, style=Style(contour_labels=True)).axes[0]
+    assert len(marked.texts) > len(bare.texts)
+    assert any("0." in t.get_text() or "1" in t.get_text() for t in marked.texts)
+
+
+def test_the_contour_line_colour_follows_the_map_polarity():
+    """On a sequential map most of the area is dark, so the default dark line
+    disappears exactly where the outer levels are."""
+    from optiplot.render import _labelled_contours
+
+    ux = uy = np.array([0.0, 1.0, 2.0])
+    sequential = np.array([[0.0, 0.4, 0.8], [0.3, 1.0, 0.6], [0.7, 0.5, 0.9]])
+    crossing = np.array([[-1.0, 0.2, 1.0], [0.1, 0.0, -0.4], [0.9, -0.8, 0.3]])
+    p, rec = surface("heatmap_contours")
+    ax = render(p, rec, style=Style()).axes[0]
+    light = _labelled_contours(ax, ux, uy, sequential, Style())
+    dark = _labelled_contours(ax, ux, uy, crossing, Style())
+    assert max(light.get_edgecolors()[0][:3]) > 0.9, "sequential map should get light lines"
+    assert max(dark.get_edgecolors()[0][:3]) < 0.3, "diverging map should get dark lines"
+    pinned = render(p, rec, style=Style(contour_line_color="#FF0000"))
+    assert pinned.axes[0].collections[-1].get_edgecolors()[0][:3] == pytest.approx(
+        (1.0, 0.0, 0.0)
+    )
+
+
+def test_missing_fill_paints_unmeasured_cells_not_left_blank():
+    from matplotlib.colors import to_hex
+
+    p, rec = surface(holes=True)
+    bare = render(p, rec, style=Style(missing_fill="none")).axes[0]
+    grey = render(p, rec, style=Style(missing_fill="dimgrey")).axes[0]
+    assert to_hex(bare.collections[0].cmap(np.ma.masked)) != "#696969"
+    assert to_hex(grey.collections[0].cmap(np.ma.masked)) == "#696969"
+
+
+def test_marginal_height_changes_the_panel_split():
+    p, rec = surface("heatmap_marginals")
+    thin = render(p, rec, style=Style(marginal_height=0.1))
+    tall = render(p, rec, style=Style(marginal_height=0.6))
+    assert thin.axes[0].get_position().height > tall.axes[0].get_position().height
+
+
+@pytest.mark.parametrize("bad", [{"missing_fill": "transparent"}, {"contour_line_color": "nope"}])
+def test_bad_surface_values_are_rejected(bad):
+    with pytest.raises(ValueError):
+        Style(**bad).validate()
 
 
 def test_image_and_diagram_types_keep_their_data_and_stay_ungridded():

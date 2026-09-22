@@ -3,6 +3,7 @@
 from pathlib import Path
 import math
 from typing import NamedTuple
+import warnings
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -42,6 +43,8 @@ FIGURE_TYPES = (
     "density",
     "errorbar",
     "heatmap",
+    "heatmap_contours",
+    "heatmap_marginals",
     "contour",
     "matrix_heatmap",
     "polar",
@@ -50,6 +53,15 @@ FIGURE_TYPES = (
     "correlation",
     "flow",
     "table",
+)
+
+# Every view whose body is a measured two-dimensional grid painted as colour.
+SURFACE_KINDS = (
+    "heatmap",
+    "heatmap_contours",
+    "heatmap_marginals",
+    "contour",
+    "matrix_heatmap",
 )
 
 
@@ -192,6 +204,121 @@ def _fit_overlay(ax, residual_ax, df, xname, yname, choice, palette, style, x_fa
     return result
 
 
+def _grid_of(df, e, numeric):
+    """Shared (x, y, z) preparation for every surface view of a two-dimensional scan.
+
+    Duplicate coordinates are refused rather than averaged: silently choosing a
+    summary for repeated points is how a plot stops being the data.
+    """
+    if "x" not in e or "y" not in e or "z" not in e:  # a coordinate-free array
+        z = df[e.get("columns", numeric)].to_numpy(dtype=float)
+        return np.arange(z.shape[1]), np.arange(z.shape[0]), z, "Column index", "Row index", "Value"
+    xn, yn, zn = e["x"], e["y"], e["z"]
+    d = _finite(df, [xn, yn, zn])
+    if d.duplicated([xn, yn]).any():
+        raise ValueError("二维坐标存在重复观测；请先明确汇总方式。")
+    table = d.pivot(index=yn, columns=xn, values=zn).sort_index().sort_index(axis=1)
+    if min(table.shape) < 2:
+        raise ValueError("二维图至少需要每个方向有两个坐标。")
+    return table.columns.to_numpy(), table.index.to_numpy(), table.to_numpy(), xn, yn, zn
+
+
+def _is_signed(z) -> bool:
+    """Whether the map crosses zero, which is what decides diverging versus
+    sequential colour and, with it, which line colour stays visible."""
+    return bool(np.nanmin(z) < 0 < np.nanmax(z))
+
+
+def _surface_colormap(z, style):
+    cmap = style.cmap
+    signed = _is_signed(z)
+    norm = None
+    if cmap == "auto":
+        cmap = "RdBu_r" if signed else "viridis"
+    if cmap == "RdBu_r" and signed:
+        limit = float(np.nanmax(np.abs(z)))
+        norm = TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit)
+    return cmap, norm
+
+
+def _paint_surface(ax, ux, uy, z, style):
+    """The measured grid as colour, with unmeasured cells painted as such.
+
+    Leaving a hole shows the axes background, which on some colour maps is the
+    same colour as a real low value; `missing_fill` says "nothing was measured
+    here" in a colour that cannot be a data value.
+    """
+    cmap, norm = _surface_colormap(z, style)
+    painted = matplotlib.colormaps[cmap]
+    if style.missing_fill != "none":
+        painted = painted.with_extremes(bad=style.missing_fill)
+    mesh = ax.pcolormesh(
+        ux, uy, np.ma.masked_invalid(z), cmap=painted, norm=norm, shading=style.image_shading
+    )
+    return mesh, (cmap if norm is None else painted), norm
+
+
+def _mean_over(z, axis):
+    """Mean along one axis, with an entirely unmeasured line staying NaN instead
+    of emitting a warning and a zero."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return np.nanmean(z, axis=axis)
+
+
+def _marginal_profiles(top, right, ux, uy, z, xn, yn, style):
+    """One profile per axis: what the map averages to when read along the other.
+
+    Only two panels, not four. The profile across the top and the one across the
+    bottom are the same numbers, and printing them twice buys nothing but ink.
+    """
+    colour = style.colors[0 % len(style.colors)]
+    weight = max(0.8, float(style.line_width) * 0.8)
+    top.plot(ux, _mean_over(z, 0), color=colour, linewidth=weight)
+    right.plot(_mean_over(z, 1), uy, color=colour, linewidth=weight)
+    # Each caption belongs on the axis carrying the profile's own values: the top
+    # panel reads vertically, the right one horizontally against the shared y.
+    top.set_ylabel(f"沿 {yn} 均值", fontsize=style.resolved_font_size() * 0.82)
+    right.set_xlabel(f"沿 {xn} 均值", fontsize=style.resolved_font_size() * 0.82)
+    for panel in (top, right):
+        panel.tick_params(labelsize=style.resolved_font_size() * 0.8)
+        panel.grid(False)
+    for label in top.get_xticklabels():
+        label.set_visible(False)
+    for label in right.get_yticklabels():
+        label.set_visible(False)
+    top.set_xlim(ux.min(), ux.max())
+    right.set_ylim(uy.min(), uy.max())
+
+
+def _labelled_contours(ax, ux, uy, z, style):
+    """Contour lines, optionally numbered where they run.
+
+    "auto" picks by the map's polarity: a sequential map is dark over most of its
+    area, so dark lines disappear exactly where the outer levels are, while a
+    diverging map is pale through its middle where the lines carry information.
+    """
+    colour = style.contour_line_color
+    if colour == "auto":
+        colour = "#20303C" if _is_signed(z) else "#FFFFFF"
+    lines = ax.contour(
+        ux,
+        uy,
+        z,
+        levels=style.contour_levels,
+        colors=colour,
+        linewidths=max(0.4, float(style.line_width) * 0.45),
+    )
+    if style.contour_labels:
+        ax.clabel(
+            lines,
+            inline=True,
+            fontsize=style.resolved_font_size() * 0.82,
+            fmt=lambda value: f"{value:.3g}",
+        )
+    return lines
+
+
 def _peak_and_fwhm(wave, value) -> Peak:
     """Locate the interior extremum of a curve and its full width at half maximum.
 
@@ -303,14 +430,35 @@ def render(profile, rec, output=None, options=None, style=None):
         fig = Figure(
             figsize=style.size_inches(), dpi=style.preview_dpi, **style.figure_kwargs()
         )
-        if fit_choice in _MODEL_IDS:
+        marginal_axes = None
+        residual_ax = None
+        if rec.id == "heatmap_marginals":
+            # The colour bar gets its own column: a colorbar built from `ax`
+            # shrinks only that axes, which would pull the map out of alignment
+            # with the profile panels that share its axes.
+            edge = max(0.05, min(0.8, float(style.marginal_height)))
+            grid = fig.add_gridspec(
+                2,
+                3,
+                width_ratios=[1.0, edge, max(0.06, style.colorbar_thickness * 3.0)],
+                height_ratios=[edge, 1.0],
+                hspace=0.04,
+                wspace=0.04,
+            )
+            ax = fig.add_subplot(grid[1, 0])
+            marginal_axes = (
+                fig.add_subplot(grid[0, 0], sharex=ax),
+                fig.add_subplot(grid[1, 1], sharey=ax),
+                fig.add_subplot(grid[:, 2]),
+            )
+        elif fit_choice in _MODEL_IDS:
             # A named model always brings its residuals: a curve that looks right
             # is exactly the case where the reader needs the difference shown.
             ax, residual_ax = fig.subplots(2, 1, height_ratios=[3.2, 1.0], sharex=True)
         else:
             ax = fig.add_subplot(111, projection="polar" if rec.id == "polar" else None)
             residual_ax = None
-        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax)
+        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes)
         if residual_ax is not None:
             # One row of x labels for one shared axis: the strip underneath carries
             # them, as it does in every published residual panel.
@@ -367,7 +515,7 @@ def render(profile, rec, output=None, options=None, style=None):
         return fig
 
 
-def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None):
+def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=None):
     palette = style.colors
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
@@ -849,39 +997,25 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None):
                 )
         ax.set(xlabel=xname, ylabel=yname)
         _legend(ax, style)
-    elif kind in ["heatmap", "contour", "matrix_heatmap"]:
-        if kind == "matrix_heatmap":
-            z = df[e.get("columns", numeric)].to_numpy(dtype=float)
-            ux = np.arange(z.shape[1])
-            uy = np.arange(z.shape[0])
-            xn, yn, zn = "Column index", "Row index", "Value"
-        else:
-            xn, yn, zn = e["x"], e["y"], e["z"]
-            d = _finite(df, [xn, yn, zn])
-            if d.duplicated([xn, yn]).any():
-                raise ValueError("二维坐标存在重复观测；请先明确汇总方式。")
-            table = d.pivot(index=yn, columns=xn, values=zn).sort_index().sort_index(axis=1)
-            ux = table.columns.to_numpy()
-            uy = table.index.to_numpy()
-            z = table.to_numpy()
-            if min(z.shape) < 2:
-                raise ValueError("二维图至少需要每个方向有两个坐标。")
-        cmap = style.cmap
-        signed = np.nanmin(z) < 0 < np.nanmax(z)
-        norm = None
-        if cmap == "auto":
-            cmap = "RdBu_r" if signed else "viridis"
-        if cmap == "RdBu_r" and signed:
-            limit = float(np.nanmax(np.abs(z)))
-            norm = TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit)
+    elif kind in SURFACE_KINDS:
+        ux, uy, z, xn, yn, zn = _grid_of(df, e, numeric)
         if kind == "contour":
-            m = ax.contourf(ux, uy, z, levels=style.contour_levels, cmap=cmap, norm=norm)
-        else:
-            m = ax.pcolormesh(
-                ux, uy, np.ma.masked_invalid(z), cmap=cmap, norm=norm,
-                shading=style.image_shading,
+            cmap, norm = _surface_colormap(z, style)
+            m = ax.contourf(
+                ux, uy, z, levels=style.contour_levels, cmap=cmap, norm=norm
             )
-        _colorbar(fig, m, ax, zn, style)
+            if style.contour_labels:
+                _labelled_contours(ax, ux, uy, z, style)
+        else:
+            m, _, _ = _paint_surface(ax, ux, uy, z, style)
+            if kind == "heatmap_contours":
+                _labelled_contours(ax, ux, uy, z, style)
+        if marginal_axes is None:
+            _colorbar(fig, m, ax, zn, style)
+        else:
+            top, right, colour_axis = marginal_axes
+            fig.colorbar(m, cax=colour_axis, label=zn)
+            _marginal_profiles(top, right, ux, uy, z, xn, yn, style)
         ax.set(xlabel=xn, ylabel=yn)
         ax.grid(False)
         return
