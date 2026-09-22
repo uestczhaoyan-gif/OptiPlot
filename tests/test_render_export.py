@@ -559,9 +559,30 @@ def test_marginal_profiles_are_the_column_and_row_means():
     # each caption sits on the axis carrying that profile's own values
     assert "y_um" in top.get_ylabel() and top.get_xlabel() == ""
     assert "x_um" in right.get_xlabel()
-    # the shared axes must still line up after the colour bar takes its column
-    assert ax.get_ylim() == pytest.approx(right.get_ylim())
-    assert ax.get_xlim() == pytest.approx(top.get_xlim())
+
+
+    # each caption sits on the axis carrying the profile's own values
+    assert "y_um" in top.get_ylabel() and top.get_xlabel() == ""
+    assert "x_um" in right.get_xlabel()
+
+
+def test_marginal_panels_do_not_clip_the_map_they_share_axes_with():
+    """A limit set on a shared child propagates back to the parent, and
+    pcolormesh extends half a cell past the outermost coordinate, so the naive
+    "match the panels to the data range" silently cut the border cells off."""
+    x, y = np.meshgrid(np.linspace(-4.0, 4.0, 21), np.linspace(-3.0, 3.0, 15))
+    z = np.exp(-(x**2 / 4.0 + y**2) / 2.0)
+    p = analyze_dataframe(
+        pd.DataFrame({"x_um": x.ravel(), "y_um": y.ravel(), "field_au": z.ravel()})
+    )
+    plain = render(p, next(r for r in recommend(p) if r.id == "heatmap")).axes[0]
+    with_panels = render(
+        p, next(r for r in recommend(p) if r.id == "heatmap_marginals")
+    ).axes[0]
+    assert with_panels.get_xlim() == pytest.approx(plain.get_xlim())
+    assert with_panels.get_ylim() == pytest.approx(plain.get_ylim())
+    # the cells at the border must actually be inside the drawn frame
+    assert with_panels.get_xlim()[0] < x.min() and with_panels.get_xlim()[1] > x.max()
 
 
 def test_a_surface_and_its_contours_are_both_drawn():

@@ -252,10 +252,9 @@ def _paint_surface(ax, ux, uy, z, style):
     painted = matplotlib.colormaps[cmap]
     if style.missing_fill != "none":
         painted = painted.with_extremes(bad=style.missing_fill)
-    mesh = ax.pcolormesh(
+    return ax.pcolormesh(
         ux, uy, np.ma.masked_invalid(z), cmap=painted, norm=norm, shading=style.image_shading
     )
-    return mesh, (cmap if norm is None else painted), norm
 
 
 def _mean_over(z, axis):
@@ -287,8 +286,9 @@ def _marginal_profiles(top, right, ux, uy, z, xn, yn, style):
         label.set_visible(False)
     for label in right.get_yticklabels():
         label.set_visible(False)
-    top.set_xlim(ux.min(), ux.max())
-    right.set_ylim(uy.min(), uy.max())
+    # No manual limits here. The panels share their axes with the map, and a limit
+    # set on the child propagates back and clips the outermost measured cells,
+    # which pcolormesh extends half a cell past the last coordinate.
 
 
 def _labelled_contours(ax, ux, uy, z, style):
@@ -1007,7 +1007,7 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
             if style.contour_labels:
                 _labelled_contours(ax, ux, uy, z, style)
         else:
-            m, _, _ = _paint_surface(ax, ux, uy, z, style)
+            m = _paint_surface(ax, ux, uy, z, style)
             if kind == "heatmap_contours":
                 _labelled_contours(ax, ux, uy, z, style)
         if marginal_axes is None:
