@@ -709,6 +709,16 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             enc.copy(),
             1,
         )
+        add(
+            "heatmap_normalized",
+            "逐行（列）归一化热图",
+            "medium",
+            f"每个 {gy} 处沿 {gx} 各自标准化后成图，用于消去随 {gy} 变化的整体水平、"
+            "只比较各行形状；颜色此时不再是实测值，"
+            "不同行之间同色不代表同值，默认口径可在 normalize 里改成按另一轴",
+            enc.copy(),
+            2,
+        )
     else:
         partial = _partial_grid(data, eligible)
         if partial:

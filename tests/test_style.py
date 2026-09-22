@@ -363,6 +363,7 @@ AXES_LEFT_ALONE = {
     "heatmap",
     "heatmap_contours",
     "heatmap_marginals",
+    "heatmap_normalized",
     "contour",
     "matrix_heatmap",
     "polar",
@@ -471,10 +472,51 @@ def test_marginal_height_changes_the_panel_split():
     assert thin.axes[0].get_position().height > tall.axes[0].get_position().height
 
 
-@pytest.mark.parametrize("bad", [{"missing_fill": "transparent"}, {"contour_line_color": "nope"}])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"missing_fill": "transparent"},
+        {"contour_line_color": "nope"},
+        {"masked_fill": "none"},
+        {"mask_below": -0.1},
+        {"mask_below": float("inf")},
+    ],
+)
 def test_bad_surface_values_are_rejected(bad):
     with pytest.raises(ValueError):
         Style(**bad).validate()
+
+
+def test_mask_knobs_change_the_rendered_pixels():
+    import hashlib
+    import io
+
+    p, rec = surface(holes=True)
+
+    def digest(**kw):
+        fig = render(p, rec, style=Style(**kw))
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=110)
+        fig.clear()
+        return hashlib.sha256(buf.getvalue()).hexdigest()
+
+    base = digest()
+    for kw in (
+        {"mask_below": 0.3},
+        {"mask_below": 0.3, "masked_fill": "black"},
+        {"mask_below": 0.3, "missing_fill": "dimgrey"},
+    ):
+        assert digest(**kw) != base, f"{kw} changed nothing"
+
+
+def test_the_mask_layer_lies_over_the_data():
+    p, rec = surface(holes=True)
+    plain = render(p, rec, style=Style()).axes[0]
+    veiled = render(p, rec, style=Style(mask_below=0.4)).axes[0]
+    assert len(plain.collections) == 1 and len(veiled.collections) == 2
+    assert (
+        veiled.collections[1].get_zorder() >= veiled.collections[0].get_zorder()
+    ), "hidden cells would be painted under the map"
 
 
 def test_image_and_diagram_types_keep_their_data_and_stay_ungridded():

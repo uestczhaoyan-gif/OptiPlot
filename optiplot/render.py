@@ -45,6 +45,7 @@ FIGURE_TYPES = (
     "heatmap",
     "heatmap_contours",
     "heatmap_marginals",
+    "heatmap_normalized",
     "contour",
     "matrix_heatmap",
     "polar",
@@ -60,9 +61,12 @@ SURFACE_KINDS = (
     "heatmap",
     "heatmap_contours",
     "heatmap_marginals",
+    "heatmap_normalized",
     "contour",
     "matrix_heatmap",
 )
+# Which coordinate is held fixed when each line of the grid is standardised.
+NORMALIZATIONS = ("per_y", "per_x")
 
 
 # A difference crosses zero by construction, so a log axis there is meaningless;
@@ -241,20 +245,64 @@ def _surface_colormap(z, style):
     return cmap, norm
 
 
-def _paint_surface(ax, ux, uy, z, style):
-    """The measured grid as colour, with unmeasured cells painted as such.
+def _paint_surface(ax, ux, uy, z, style, masked=None):
+    """The measured grid as colour, plus a layer for cells hidden by a threshold.
 
-    Leaving a hole shows the axes background, which on some colour maps is the
-    same colour as a real low value; `missing_fill` says "nothing was measured
-    here" in a colour that cannot be a data value.
+    A hidden cell and an unmeasured cell must not share a colour: one says
+    "there is no number here", the other "there is one, and it was small". The
+    first is the colour map's own bad-cell colour; the second is drawn over it as
+    a separate flat layer, so both can appear on one map.
     """
     cmap, norm = _surface_colormap(z, style)
     painted = matplotlib.colormaps[cmap]
     if style.missing_fill != "none":
         painted = painted.with_extremes(bad=style.missing_fill)
-    return ax.pcolormesh(
-        ux, uy, np.ma.masked_invalid(z), cmap=painted, norm=norm, shading=style.image_shading
+    mesh = ax.pcolormesh(
+        ux,
+        uy,
+        np.ma.masked_invalid(z),
+        cmap=painted,
+        norm=norm,
+        shading=style.image_shading,
     )
+    hidden = 0
+    if masked is not None and masked.any():
+        hidden = int(masked.sum())
+        veil = np.ma.masked_where(~masked, np.zeros_like(np.asarray(z, dtype=float)))
+        ax.pcolormesh(
+            ux,
+            uy,
+            veil,
+            cmap=matplotlib.colors.ListedColormap([style.masked_fill]),
+            vmin=0.0,
+            vmax=1.0,
+            shading=style.image_shading,
+        )
+    return mesh, hidden
+
+
+def _threshold_mask(z, style):
+    """Cells hidden by `mask_below`, or None when no threshold is set."""
+    if style.mask_below is None:
+        return None
+    return np.abs(z) < abs(float(style.mask_below))
+
+
+def _normalised_surface(z, per):
+    """Standardise each line of the grid along one coordinate.
+
+    `per` names the coordinate held fixed: "per_y" normalises each row across x,
+    which divides out whatever varies with y and leaves the row-to-row shape
+    comparable. The result stops being a measured value -- two equally coloured
+    cells in different rows are only equal relative to their own row.
+    """
+    axis = 1 if per == "per_y" else 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        centre = np.nanmean(z, axis=axis, keepdims=True)
+        spread = np.nanstd(z, axis=axis, keepdims=True)
+    flat = np.where(np.asarray(spread) > 0, spread, np.nan)
+    return (z - centre) / flat
 
 
 def _mean_over(z, axis):
@@ -999,6 +1047,20 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
         _legend(ax, style)
     elif kind in SURFACE_KINDS:
         ux, uy, z, xn, yn, zn = _grid_of(df, e, numeric)
+        # The threshold is judged against the measured value, before any
+        # normalisation: a user setting 0.05 means five per cent of what they
+        # measured, not five per cent of some row's standard deviation.
+        mask = _threshold_mask(z, style)
+        caption = zn
+        if kind == "heatmap_normalized":
+            per = str(opts.get("normalize", e.get("normalize", "per_y")))
+            if per not in NORMALIZATIONS:
+                raise ValueError(
+                    f"normalize 需是 {'/'.join(NORMALIZATIONS)} 之一，当前 {per!r}"
+                )
+            fixed, other = (yn, xn) if per == "per_y" else (xn, yn)
+            z = _normalised_surface(z, per)
+            caption = f"每个 {fixed} 处沿 {other} 的 z-score"
         if kind == "contour":
             cmap, norm = _surface_colormap(z, style)
             m = ax.contourf(
@@ -1006,15 +1068,20 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
             )
             if style.contour_labels:
                 _labelled_contours(ax, ux, uy, z, style)
+            hidden = 0
         else:
-            m = _paint_surface(ax, ux, uy, z, style)
+            m, hidden = _paint_surface(ax, ux, uy, z, style, masked=mask)
             if kind == "heatmap_contours":
                 _labelled_contours(ax, ux, uy, z, style)
+        if hidden:
+            # Say what the flat colour is, next to the colour, rather than
+            # trusting a reader to guess that a grey square was measured.
+            caption += f"\n已屏蔽 {hidden} 格（|{zn}| < {float(style.mask_below):g}）"
         if marginal_axes is None:
-            _colorbar(fig, m, ax, zn, style)
+            _colorbar(fig, m, ax, caption, style)
         else:
             top, right, colour_axis = marginal_axes
-            fig.colorbar(m, cax=colour_axis, label=zn)
+            fig.colorbar(m, cax=colour_axis, label=caption)
             _marginal_profiles(top, right, ux, uy, z, xn, yn, style)
         ax.set(xlabel=xn, ylabel=yn)
         ax.grid(False)

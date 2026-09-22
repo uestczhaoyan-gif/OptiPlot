@@ -471,6 +471,24 @@
   "recipe": "留白与色带低端的颜色可能相同，读者会把没测的地方读成低值；missing_fill 给缺测格一个不可能属于色带的颜色，前提是色带本身不含该灰阶。"
  },
  {
+  "id": "heatmap-12",
+  "label": "阈值屏蔽与缺测分开着色",
+  "patterns": [
+   "heatmap"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "被阈值挡掉的格子与从未测过的格子必须两种颜色：前者说“测了但很小”，后者说“没有数”。屏蔽数量要写在色标上，否则读者会把灰块当成背景。"
+ },
+ {
+  "id": "heatmap-13",
+  "label": "阈值按实测值判定",
+  "patterns": [
+   "heatmap"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "屏蔽阈值与归一化无关，判的是实测值：设 0.05 就是 5% 的测量量，不是 5% 的某行标准差；先屏蔽后归一化的顺序会影响结论，不要反过来。"
+ },
+ {
   "id": "heatmap_contours-01",
   "label": "模式场叠加结构等值线",
   "patterns": [
@@ -514,6 +532,33 @@
   ],
   "data_schema": "x_um, y_um, intensity_au",
   "recipe": "上边与下边是同一条曲线的重复，左边与右边同理，因此只画上与右；若确实要四边，应让其中一对显示分位数而不是再画一遍均值。"
+ },
+ {
+  "id": "heatmap_normalized-01",
+  "label": "消去光谱包络的逐行归一化",
+  "patterns": [
+   "heatmap_normalized"
+  ],
+  "data_schema": "wavelength_nm, temperature_K, transmittance",
+  "recipe": "每个温度处沿波长各自标准化，消去随温度变化的整体透过率水平，只比较谱形；此时颜色不再是实测值，不同温度之间同色不代表同值，色标必须写明口径。"
+ },
+ {
+  "id": "heatmap_normalized-02",
+  "label": "归一化口径要写进图注",
+  "patterns": [
+   "heatmap_normalized"
+  ],
+  "data_schema": "x_position_mm, y_position_mm, field_au",
+  "recipe": "行标准化与列标准化回答的是两个不同问题，图上看不出区别；必须写明按哪个坐标归一、以及消掉了什么，否则读者会拿颜色反推绝对大小。"
+ },
+ {
+  "id": "heatmap_normalized-03",
+  "label": "整行无变化时不画",
+  "patterns": [
+   "heatmap_normalized"
+  ],
+  "data_schema": "wavelength_nm, angle_deg, reflectance",
+  "recipe": "标准差为零的行除以零后留空而不是报 0；若图中出现整行空白，说明该行本来就是平的，不要改成强行填充。"
  },
  {
   "id": "peak_annotation-01",

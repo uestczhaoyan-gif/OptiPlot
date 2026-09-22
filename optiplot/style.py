@@ -13,6 +13,7 @@ case to tests/test_style.py.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, fields, asdict, replace
 import difflib
 import json
@@ -75,6 +76,7 @@ DATA_KEYS = frozenset(
     {
         "encodings",
         "fit",
+        "normalize",
         "angle_unit",
         "error_type",
         "title",
@@ -139,6 +141,9 @@ SHADINGS = ("auto", "nearest", "gouraud")
 # indistinguishable from a value that happens to sit at the bottom of the colour
 # scale on some maps; a named grey says "nothing was measured here" out loud.
 MISSING_FILLS = ("none", "grey", "lightgrey", "dimgrey", "white")
+# A hidden cell cannot be left unpainted: that is exactly what an unmeasured cell
+# looks like, and the two say opposite things.
+MASKED_FILLS = ("grey", "lightgrey", "dimgrey", "white", "black")
 # Matplotlib marker codes worth exposing for optics plots; the full set is on
 # the docs page but these are the ones that survive small print sizes.
 MARKERS = (
@@ -303,6 +308,8 @@ class Style:
     contour_labels: bool = False
     contour_line_color: str = "auto"
     missing_fill: str = "none"
+    masked_fill: str = "lightgrey"
+    mask_below: float | None = None
     marginal_height: float = 0.28
     colorbar_thickness: float = 0.046
     colorbar_pad: float = 0.03
@@ -446,6 +453,14 @@ class Style:
             raise ValueError(f"image_shading 需是 {'/'.join(SHADINGS)} 之一")
         if self.missing_fill not in MISSING_FILLS:
             raise ValueError(f"missing_fill 需是 {'/'.join(MISSING_FILLS)} 之一")
+        if self.masked_fill not in MASKED_FILLS:
+            raise ValueError(f"masked_fill 需是 {'/'.join(MASKED_FILLS)} 之一")
+        if self.mask_below is not None:
+            threshold = float(self.mask_below)
+            if not math.isfinite(threshold) or threshold < 0:
+                raise ValueError(
+                    f"mask_below 需是非负的有限数或 None，当前 {self.mask_below!r}"
+                )
         if self.contour_line_color != "auto" and not is_color_like(self.contour_line_color):
             raise ValueError(
                 f"contour_line_color 需是 auto 或 Matplotlib 认识的颜色，当前 {self.contour_line_color!r}"

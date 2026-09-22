@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import json
+import re
 import subprocess
 import sys
 import zipfile
@@ -11,6 +12,7 @@ import pytest
 from matplotlib.colors import to_hex
 from optiplot import analyze_file, analyze_dataframe, recommend, Recommendation
 from optiplot.render import render, FIGURE_TYPES
+from optiplot.style import Style
 from optiplot.export import export_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -585,12 +587,91 @@ def test_marginal_panels_do_not_clip_the_map_they_share_axes_with():
     assert with_panels.get_xlim()[0] < x.min() and with_panels.get_xlim()[1] > x.max()
 
 
+def tilt_grid(hole=False):
+    """A beam whose vertical extent grows with y, so the two normalisations give
+    visibly different answers and a test can tell them apart. `hole` adds one
+    genuinely unmeasured cell, which makes the grid partial."""
+    x, y = np.meshgrid(np.linspace(-4.0, 4.0, 11), np.linspace(-3.0, 3.0, 7))
+    z = np.exp(-(x**2 / 4.0 + y**2) / 2.0) * (1.0 + 0.4 * y)
+    frame = pd.DataFrame({"x_um": x.ravel(), "y_um": y.ravel(), "field_au": z.ravel()})
+    if hole:
+        frame.loc[0, "field_au"] = np.nan
+    return analyze_dataframe(frame), z
+
+
 def test_a_surface_and_its_contours_are_both_drawn():
     p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
     rec = next(r for r in recommend(p) if r.id == "heatmap_contours")
     ax = render(p, rec).axes[0]
     assert len(ax.collections) == 2, "expected a pcolormesh and a contour set"
     assert ax.collections[1].get_paths(), "contour lines missing"
+
+
+def test_normalisation_makes_each_line_zero_mean_unit_spread():
+    p, _ = tilt_grid()
+    rec = next(r for r in recommend(p) if r.id == "heatmap_normalized")
+    mesh = render(p, rec, style=Style(missing_fill="none")).axes[0].collections[0]
+    grid = np.asarray(mesh.get_array()).reshape(7, 11)
+    rows = grid[~np.isnan(grid).any(axis=1)]  # the row holding the unmeasured cell
+    assert rows.shape[0] >= 5
+    assert rows.mean(axis=1) == pytest.approx(np.zeros(rows.shape[0]), abs=1e-9)
+    assert rows.std(axis=1) == pytest.approx(np.ones(rows.shape[0]), abs=1e-9)
+
+
+def test_the_two_normalisations_are_not_the_same_figure():
+    p, _ = tilt_grid()
+    rec = next(r for r in recommend(p) if r.id == "heatmap_normalized")
+    per_y = render(p, rec, options={"normalize": "per_y"}).axes[-1].yaxis.label.get_text()
+    per_x = render(p, rec, options={"normalize": "per_x"}).axes[-1].yaxis.label.get_text()
+    assert "每个 y_um 处沿 x_um" in per_y
+    assert "每个 x_um 处沿 y_um" in per_x
+    assert per_y != per_x, "the colour bar must name the convention actually used"
+
+
+def test_a_flat_line_normalises_to_nothing_not_to_zero():
+    from optiplot.render import _normalised_surface
+
+    flat = np.ones((4, 5))
+    assert np.isnan(_normalised_surface(flat, "per_y")).all()
+    mixed = np.vstack([np.linspace(1.0, 2.0, 5), np.full(5, 7.0)])
+    out = _normalised_surface(mixed, "per_y")
+    assert np.isnan(out[1]).all() and np.isfinite(out[0]).all()
+
+
+def test_an_unknown_normalisation_is_refused():
+    p, _ = tilt_grid()
+    rec = next(r for r in recommend(p) if r.id == "heatmap_normalized")
+    with pytest.raises(ValueError, match="normalize 需是"):
+        render(p, rec, options={"normalize": "per_z"})
+
+
+def test_a_threshold_hides_cells_in_a_colour_that_is_not_the_missing_colour():
+    """A grey square can mean "measured, small" or "never measured" and the two
+    say opposite things about the sample."""
+    p, _ = tilt_grid(hole=True)
+    rec = next(r for r in recommend(p) if r.id == "heatmap")
+    fig = render(
+        p, rec, style=Style(mask_below=0.3, missing_fill="dimgrey", masked_fill="white")
+    )
+    mesh, veil = fig.axes[0].collections[0], fig.axes[0].collections[1]
+    missing = to_hex(mesh.get_cmap()(np.ma.masked))
+    hidden = to_hex(veil.get_cmap()(0.5))
+    assert missing == "#696969" and hidden == "#ffffff"
+    # the unmeasured cell is not counted among the hidden ones
+    grid = np.array(p.data["field_au"], dtype=float).reshape(7, 11)
+    expect = int(np.nansum(np.abs(grid) < 0.3))
+    stated = int(re.search(r"已屏蔽 (\d+) 格", fig.axes[-1].yaxis.label.get_text())[1])
+    assert stated == expect, (stated, expect)
+    assert 0 < stated < grid.size, "some but not all cells hidden"
+
+
+def test_the_threshold_is_judged_on_measured_values_not_normalised_ones():
+    p, z = tilt_grid()
+    rec = next(r for r in recommend(p) if r.id == "heatmap_normalized")
+    fig = render(p, rec, options={"normalize": "per_y"}, style=Style(mask_below=0.3))
+    label = fig.axes[-1].yaxis.label.get_text()
+    raw_hidden = int((np.abs(z) < 0.3).sum())
+    assert str(raw_hidden) in label, (label, raw_hidden)
 
 
 def test_dual_axis_gives_each_series_its_own_scale():
