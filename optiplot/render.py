@@ -32,6 +32,7 @@ FIGURE_TYPES = (
     "spectrum_lines",
     "peak_annotation",
     "stacked_curves",
+    "broken_spectrum",
     "spectral_difference",
     "spectral_ratio",
     "spectral_envelope",
@@ -177,6 +178,28 @@ class Peak(NamedTuple):
 
 
 NO_PEAK = Peak(np.nan, np.nan, np.nan, None, np.nan, np.nan, np.nan)
+
+
+def _break_marks(left, right, style):
+    """Slashes across the two facing spines, and those spines removed.
+
+    A broken axis is the one place where the figure has to advertise its own
+    lie: without the marks a reader carries one continuous horizontal scale
+    across the seam and compares slopes that were never on the same axis.
+    """
+    d = 0.018
+    for panel, side in ((left, 1.0), (right, 0.0)):
+        for y in (0.0, 1.0):
+            panel.plot(
+                (side - d, side + d),
+                (y - d * 1.7, y + d * 1.7),
+                transform=panel.transAxes,
+                color=style.spine_color,
+                clip_on=False,
+                linewidth=float(style.spine_width) * 1.2,
+            )
+    left.spines["right"].set_visible(False)
+    right.spines["left"].set_visible(False)
 
 
 def _fit_overlay(ax, residual_ax, df, xname, yname, choice, palette, style, x_factor=1.0):
@@ -487,7 +510,7 @@ def render(profile, rec, output=None, options=None, style=None):
         )
         marginal_axes = None
         residual_ax = None
-        cartesian_ax = None
+        companion_ax = None
         if rec.id == "heatmap_marginals":
             # The colour bar gets its own column: a colorbar built from `ax`
             # shrinks only that axes, which would pull the map out of alignment
@@ -507,6 +530,20 @@ def render(profile, rec, output=None, options=None, style=None):
                 fig.add_subplot(grid[1, 1], sharey=ax),
                 fig.add_subplot(grid[:, 2]),
             )
+        elif rec.id == "broken_spectrum":
+            if style.x_min is not None or style.x_max is not None:
+                # The two panels' ranges are the split itself. Applying a manual
+                # range to both would leave one panel showing an interval that
+                # contains no data while still wearing the other band's label.
+                raise ValueError(
+                    "断轴图的横轴范围由断点位置决定，不能同时手动设定 x_min / x_max；"
+                    "需要看单侧波段请改用连续轴的 x_min/x_max，或去掉断轴。"
+                )
+            # sharey is the whole point: the two sides must stay comparable in
+            # height, or the figure would let a gap in the axis buy a fake slope.
+            grid = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.06)
+            ax = fig.add_subplot(grid[0])
+            companion_ax = fig.add_subplot(grid[1], sharey=ax)
         elif rec.id == "poincare_sphere":
             ax = fig.add_subplot(111, projection="3d")
         elif rec.id in POLAR_KINDS:
@@ -516,7 +553,7 @@ def render(profile, rec, output=None, options=None, style=None):
                 # how the trace behaves where the angle wraps.
                 grid = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.30)
                 ax = fig.add_subplot(grid[0], projection="polar")
-                cartesian_ax = fig.add_subplot(grid[1])
+                companion_ax = fig.add_subplot(grid[1])
             else:
                 ax = fig.add_subplot(111, projection="polar")
         elif fit_choice in _MODEL_IDS:
@@ -526,7 +563,7 @@ def render(profile, rec, output=None, options=None, style=None):
         else:
             ax = fig.add_subplot(111)
             residual_ax = None
-        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes, cartesian_ax)
+        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes, companion_ax)
         if residual_ax is not None:
             # One row of x labels for one shared axis: the strip underneath carries
             # them, as it does in every published residual panel.
@@ -592,7 +629,7 @@ def render(profile, rec, output=None, options=None, style=None):
 
 
 def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=None,
-         cartesian_ax=None):
+         companion_ax=None):
     palette = style.colors
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
@@ -656,6 +693,45 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
             )
         ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
         _legend(ax, style)
+    elif kind == "broken_spectrum":
+        xname = e["x"]
+        ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+        low_end, high_end = e["gap"]
+        if companion_ax is None:
+            raise ValueError("断轴图需要左右两个面板。")
+        panels = (ax, companion_ax)
+        for i, yname in enumerate(ys):
+            d = _finite(df, [xname, yname])
+            colour = palette[i % len(palette)]
+            for panel, keep in zip(
+                panels, (d[xname] <= low_end, d[xname] >= high_end)
+            ):
+                part = d[keep]
+                if len(part) < 2:
+                    continue
+                panel.plot(
+                    part[xname],
+                    part[yname],
+                    color=colour,
+                    label=yname if panel is ax else "_nolegend_",
+                    drawstyle="steps-mid" if style.step else "default",
+                    **style.series_style(i),
+                )
+        ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
+        # Per-axis, not set_yticklabels([]): the two panels share a y axis, and
+        # blanking the labels there blanks them on the panel that carries the scale.
+        companion_ax.tick_params(axis="y", labelleft=False)
+        companion_ax.set_xlabel(xname)
+        # On the far side of the seam, lifted clear of the break mark.
+        companion_ax.set_title(
+            f"省略 {low_end:g} – {high_end:g}（该区间无测量点）",
+            loc="left",
+            pad=16,
+            fontsize=style.resolved_font_size() * 0.85,
+        )
+        _break_marks(ax, companion_ax, style)
+        _legend(ax, style)
+        return
     elif kind == "peak_annotation":
         xname = e["x"]
         ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
@@ -1259,12 +1335,12 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
         else:
             ax.plot(angles, radius, color=palette[0 % len(palette)], label=r, **style.series_style(0))
         _legend(ax, style, loc="upper right", bbox_to_anchor=(1.35, 1.13))
-        if kind == "polar_and_cartesian" and cartesian_ax is not None:
-            cartesian_ax.plot(
+        if kind == "polar_and_cartesian" and companion_ax is not None:
+            companion_ax.plot(
                 degrees, radius, color=palette[0 % len(palette)], label=r, **style.series_style(0)
             )
-            cartesian_ax.set(xlabel=f"{theta} ({unit})", ylabel=r)
-            _legend(cartesian_ax, style)
+            companion_ax.set(xlabel=f"{theta} ({unit})", ylabel=r)
+            _legend(companion_ax, style)
         return
     elif kind in ["distribution", "box"]:
         value = e.get("value", numeric[0] if numeric else None)

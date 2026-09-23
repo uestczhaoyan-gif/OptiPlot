@@ -50,6 +50,7 @@ AXIS_STYLED = frozenset(
         "spectrum_lines",
         "peak_annotation",
         "stacked_curves",
+        "broken_spectrum",
         "spectral_difference",
         "spectral_ratio",
         "spectral_envelope",

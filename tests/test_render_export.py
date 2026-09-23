@@ -710,6 +710,81 @@ def test_a_user_title_goes_above_the_scale_note_rather_than_over_it():
     assert titled.startswith("旋转台扫描") and bare in titled
 
 
+# ── broken axis ────────────────────────────────────────────────────
+def test_a_broken_axis_needs_a_real_hole_not_just_few_points():
+    """Breaking an axis is only justified by a gap far wider than the sampling
+    interval; a sparse but continuous sweep must stay on one continuous axis."""
+    continuous = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "wavelength_nm": np.arange(400.0, 1500.0, 5.0),
+                "response_A": np.sin(np.arange(400.0, 1500.0, 5.0) / 90.0),
+            }
+        )
+    )
+    assert "broken_spectrum" not in {r.id for r in recommend(continuous)}
+    split = analyze_file(ROOT / "examples" / "sample_split_band.csv")
+    assert "broken_spectrum" in {r.id for r in recommend(split)}
+
+
+def test_the_break_is_named_and_the_two_panels_share_the_vertical_scale():
+    split = analyze_file(ROOT / "examples" / "sample_split_band.csv")
+    rec = next(r for r in recommend(split) if r.id == "broken_spectrum")
+    assert rec.encodings["gap"] == [700.0, 1200.0]
+    fig = render(split, rec)
+    left, right = fig.axes
+    assert left.get_ylim() == pytest.approx(right.get_ylim()), "peak heights must stay comparable"
+    note = right.get_title(loc="left")
+    assert "700" in note and "1200" in note and "无测量点" in note
+    # the panel that carries the scale keeps its numbers; the other one does not
+    assert any(t.get_text() for t in left.get_yticklabels())
+    assert not any(t.get_visible() for t in right.get_yticklabels())
+
+
+def test_the_facing_spines_are_removed_and_marked_as_broken():
+    split = analyze_file(ROOT / "examples" / "sample_split_band.csv")
+    rec = next(r for r in recommend(split) if r.id == "broken_spectrum")
+    left, right = render(split, rec).axes
+    assert not left.spines["right"].get_visible()
+    assert not right.spines["left"].get_visible()
+    # two slashes per panel edge, drawn in axes coordinates
+    assert len(left.lines) >= 2 and len(right.lines) >= 2
+
+
+def test_a_manual_x_range_is_refused_rather_than_applied_to_both_panels():
+    """Each panel's range is the split itself; a shared manual range would leave
+    one panel empty while still labelled as the other band."""
+    from optiplot.style import Style
+
+    split = analyze_file(ROOT / "examples" / "sample_split_band.csv")
+    rec = next(r for r in recommend(split) if r.id == "broken_spectrum")
+    with pytest.raises(ValueError, match="断轴图的横轴范围"):
+        render(split, rec, style=Style(x_min=500.0, x_max=600.0))
+    # a vertical range is fine: both panels already share it
+    fig = render(split, rec, style=Style(y_min=0.0, y_max=1.2))
+    assert fig.axes[0].get_ylim() == pytest.approx((0.0, 1.2))
+    assert fig.axes[1].get_ylim() == pytest.approx((0.0, 1.2))
+
+
+def test_nothing_is_drawn_inside_the_omitted_interval():
+    """The point of the figure is that no measurement exists there; a line
+    crossing the seam would invent one."""
+    split = analyze_file(ROOT / "examples" / "sample_split_band.csv")
+    rec = next(r for r in recommend(split) if r.id == "broken_spectrum")
+    low_end, high_end = rec.encodings["gap"]
+    for panel in render(split, rec).axes:
+        for line in panel.get_lines():
+            xs = np.asarray(line.get_xdata(), dtype=float)
+            if xs.size:
+                assert np.all((xs <= low_end) | (xs >= high_end))
+    assert not any(
+        low_end < x < high_end
+        for panel in render(split, rec).axes
+        for line in panel.get_lines()
+        for x in np.asarray(line.get_xdata(), dtype=float)
+    )
+
+
 # ── Mueller matrix and Poincaré sphere ─────────────────────────────
 def mueller_frame():
     # asymmetric on purpose, so the transpose deviation has something to report

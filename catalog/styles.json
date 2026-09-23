@@ -1,5 +1,41 @@
 [
  {
+  "id": "broken_spectrum-01",
+  "label": "双量程拼起来的宽谱",
+  "patterns": [
+   "broken_spectrum"
+  ],
+  "data_schema": "wavelength_nm, response",
+  "recipe": "两段量程之间确实没有数据时才断轴；断口两侧各展开读数，共用纵轴刻度所以峰高仍可比，但跨过断口的斜率与间距不再有意义，不要在两瓣之间量任何东西。"
+ },
+ {
+  "id": "broken_spectrum-02",
+  "label": "断口必须可见",
+  "patterns": [
+   "broken_spectrum"
+  ],
+  "data_schema": "wavelength_nm, response",
+  "recipe": "断口标记与省略区间是这张图的必需项而不是装饰：抹掉它们，读者会把两条独立坐标当成一条连续轴来读，从而在断口两侧编出根本不存在的趋势。"
+ },
+ {
+  "id": "broken_spectrum-03",
+  "label": "不要用断轴压缩想省略的区间",
+  "patterns": [
+   "broken_spectrum"
+  ],
+  "data_schema": "wavelength_nm, response",
+  "recipe": "如果空洞是仪器本来能测而你没测，那是采样问题，应补测或改用连续轴把空白露出来；只有量程切换这类物理上不可能有数据的地方才值得断轴。"
+ },
+ {
+  "id": "broken_spectrum-04",
+  "label": "多响应列共用断口",
+  "patterns": [
+   "broken_spectrum"
+  ],
+  "data_schema": "wavelength_nm, signal_a, signal_b",
+  "recipe": "所有列在同一处断开，断口位置取自横轴而不是某一列；若某列在空洞一侧不足三个点，该列那一侧不画而不是把整条轴挪到别处断。"
+ },
+ {
   "id": "contour-01",
   "label": "TE/TM 场幅值空间分布",
   "patterns": [

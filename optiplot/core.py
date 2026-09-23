@@ -533,6 +533,28 @@ def _stokes_columns(columns) -> list[str] | None:
     return _named_block(columns, ("s0", "s1", "s2", "s3"))
 
 
+def _widest_x_gap(x):
+    """The largest empty interval in a scan axis, measured against the sampling
+    spacing.
+
+    A gap earns a broken axis only if it is far wider than the interval the data
+    is otherwise sampled at. Anything smaller is a sparse region, and a
+    continuous line over it is honest; breaking the axis there would buy canvas
+    nobody needed and invite the reader to compare slopes across a seam.
+    """
+    v = np.unique(pd.to_numeric(pd.Series(x), errors="coerce").dropna().to_numpy())
+    if v.size < 6:
+        return None
+    steps = np.diff(v)
+    median = float(np.median(steps))
+    if median <= 0:
+        return None
+    i = int(np.argmax(steps))
+    if steps[i] < 8.0 * median:
+        return None
+    return float(v[i]), float(v[i + 1]), float(steps[i] / median)
+
+
 def _ordered(values) -> bool:
     values = values.dropna()
     return (
@@ -936,6 +958,26 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                     "适合看峰形随参数的移动；每条曲线的基线只是排版偏移，"
                     "不是物理零点，纵坐标绝对值只能在本条曲线内部解读",
                     {"x": x, "y": line_ys[:1], "group": group},
+                    7,
+                )
+
+        gap = None if p.grid_like else _widest_x_gap(data[x])
+        if gap:
+            lo, hi, ratio = gap
+            bridged = []
+            for c in line_ys:
+                xs = data[[x, c]].dropna()[x].to_numpy()
+                if int((xs <= lo).sum()) >= 3 and int((xs >= hi).sum()) >= 3:
+                    bridged.append(c)
+            if bridged:
+                add(
+                    "broken_spectrum",
+                    "断轴光谱曲线",
+                    "high",
+                    f"{x} 在 {lo:g}–{hi:g} 之间是空的（约为采样间隔的 {ratio:g} 倍），"
+                    "连续坐标轴会把大部分画布留给这段空洞；断轴后两侧各自展开读数，"
+                    "两侧共用纵轴刻度所以峰高仍可比，横向斜率跨过断口不可比",
+                    {"x": x, "y": bridged[:8], "gap": [lo, hi]},
                     7,
                 )
 
