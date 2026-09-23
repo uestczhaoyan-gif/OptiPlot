@@ -51,6 +51,8 @@ FIGURE_TYPES = (
     "polar",
     "polar_db",
     "polar_and_cartesian",
+    "mueller_matrix",
+    "poincare_sphere",
     "distribution",
     "box",
     "correlation",
@@ -505,6 +507,8 @@ def render(profile, rec, output=None, options=None, style=None):
                 fig.add_subplot(grid[1, 1], sharey=ax),
                 fig.add_subplot(grid[:, 2]),
             )
+        elif rec.id == "poincare_sphere":
+            ax = fig.add_subplot(111, projection="3d")
         elif rec.id in POLAR_KINDS:
             if rec.id == "polar_and_cartesian":
                 # Two readings of one sweep, side by side: the polar frame shows
@@ -1110,6 +1114,98 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
             _marginal_profiles(top, right, ux, uy, z, xn, yn, style)
         ax.set(xlabel=xn, ylabel=yn)
         ax.grid(False)
+        return
+    elif kind == "mueller_matrix":
+        cells = e["cells"]
+        row = df[cells].apply(pd.to_numeric, errors="coerce").dropna(how="all")
+        if row.empty:
+            raise ValueError("Mueller 矩阵没有可用的数值。")
+        matrix = row.to_numpy()[0].reshape(4, 4)
+        limit = float(np.nanmax(np.abs(matrix))) or 1.0
+        m = ax.imshow(
+            matrix,
+            cmap="RdBu_r",
+            norm=TwoSlopeNorm(vmin=-limit, vcenter=0.0, vmax=limit),
+        )
+        base = ("S0", "S1", "S2", "S3")
+        ax.set_xticks(range(4), base)
+        ax.set_yticks(range(4), base)
+        ax.set(xlabel="输出 Stokes 分量", ylabel="入射 Stokes 分量", title="Mueller 矩阵")
+        for i in range(4):
+            for j in range(4):
+                value = matrix[i, j]
+                if not np.isfinite(value):
+                    continue
+                ax.text(
+                    j,
+                    i,
+                    f"{value:.3g}",
+                    ha="center",
+                    va="center",
+                    fontsize=style.resolved_font_size() * 0.85,
+                    color="white" if abs(value) > 0.6 * limit else "#17324D",
+                )
+        _colorbar(fig, m, ax, "元素值（与 M00 同量纲）", style)
+        # A statement about the numbers, not a verdict on the sample: whether a
+        # deviation from symmetric means the material is non-reciprocal is the
+        # user's call, and the units of the two blocks decide it.
+        off = matrix - matrix.T
+        if np.isfinite(off).all():
+            i, j = np.unravel_index(int(np.nanargmax(np.abs(off))), off.shape)
+            if i != j and abs(off[i, j]) > 1e-9 * limit:
+                ax.set_title(
+                    f"Mueller 矩阵；与转置矩阵最大偏差 {abs(off[i, j]):.3g}"
+                    f"（M{i}{j}/M{j}{i}），是否违反互易需结合样品类型判断",
+                    loc="left",
+                    pad=10,
+                    fontsize=style.resolved_font_size() * 0.85,
+                )
+        ax.grid(False)
+        return
+    elif kind == "poincare_sphere":
+        s0, s1, s2, s3 = (
+            pd.to_numeric(df[c], errors="coerce") for c in e["stokes"]
+        )
+        live = np.isfinite(s0) & np.isfinite(s1) & np.isfinite(s2) & np.isfinite(s3) & (s0 > 0)
+        if int(live.sum()) < 2:
+            raise ValueError("Poincaré 球需要至少两个 S0 > 0 的完整 Stokes 测量。")
+        u = (s1[live] / s0[live]).to_numpy()
+        v = (s2[live] / s0[live]).to_numpy()
+        w = (s3[live] / s0[live]).to_numpy()
+        radius = np.sqrt(u**2 + v**2 + w**2)
+        # The physical bound is on the radius, not the sum of components: using
+        # the latter would flag a legitimate state at (0.6, 0.6, 0) as impossible.
+        unphysical = int((radius > 1.0 + 1e-6).sum())
+        # Points are drawn where they were measured; the sphere is only a frame.
+        # Forcing them onto the surface would hide a partial polarisation, which
+        # is the very thing the radius carries.
+        circle = np.linspace(0.0, 2.0 * math.pi, 100)
+        # Three great circles read as a frame without hiding what lies behind
+        # them; a filled surface turns the sphere into a blob at most angles.
+        for first, second in ((0, 1), (0, 2), (1, 2)):
+            ring = np.zeros((circle.size, 3))
+            ring[:, first] = np.cos(circle)
+            ring[:, second] = np.sin(circle)
+            ax.plot(ring[:, 0], ring[:, 1], ring[:, 2], color="#B9CBD8", lw=0.7, zorder=1)
+        ax.plot(
+            u, v, w,
+            color=palette[0 % len(palette)],
+            lw=style.line_width,
+            zorder=3,
+            label=f"轨迹（按 {e['label']} 顺序）",
+        )
+        ax.scatter(u, v, w, s=style.scatter_size * 0.5, color=palette[1 % len(palette)], zorder=4)
+        ax.view_init(elev=float(style.view_elevation), azim=float(style.view_azimuth))
+        ax.set(xlabel="S1/S0", ylabel="S2/S0", zlabel="S3/S0")
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.set_zlim(-1, 1)
+        ax.set_box_aspect((1, 1, 1))
+        note = f"|S|/S0 最大 {float(np.nanmax(radius)):.3g}"
+        if unphysical:
+            note += f"；{unphysical} 点落在球外（Stokes 参数不自洽），仍按实测画出"
+        ax.set_title(note, loc="left", pad=6, fontsize=style.resolved_font_size() * 0.85)
+        _legend(ax, style)
         return
     elif kind in POLAR_KINDS:
         theta, r = e["theta"], e["r"]

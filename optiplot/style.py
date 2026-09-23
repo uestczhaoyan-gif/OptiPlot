@@ -312,6 +312,8 @@ class Style:
     mask_below: float | None = None
     db_factor: float = 10.0
     db_floor: float = 30.0
+    view_elevation: float = 18.0
+    view_azimuth: float = -58.0
     marginal_height: float = 0.28
     colorbar_thickness: float = 0.046
     colorbar_pad: float = 0.03
@@ -458,6 +460,9 @@ class Style:
         if float(self.db_factor) not in (10.0, 20.0):
             raise ValueError("db_factor 只能是 10（功率量）或 20（场幅量），当前 "
                              f"{self.db_factor}")
+        for name in ("view_elevation", "view_azimuth"):
+            if not -90.0 <= float(getattr(self, name)) <= 360.0:
+                raise ValueError(f"{name} 需在 -90 到 360 度之间，当前 {getattr(self, name)}")
         if not 3.0 <= float(self.db_floor) <= 90.0:
             raise ValueError(f"db_floor 需在 3–90 dB 之间，当前 {self.db_floor}")
         if self.masked_fill not in MASKED_FILLS:

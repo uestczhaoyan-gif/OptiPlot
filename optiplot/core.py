@@ -510,6 +510,29 @@ def _strictly_ordered(values) -> bool:
     return v.size >= 4 and bool(np.all(np.diff(v) > 0) or np.all(np.diff(v) < 0))
 
 
+_MUELLER_CELLS = tuple(f"m{i}{j}" for i in range(4) for j in range(4))
+
+
+def _named_block(columns, keys):
+    """Map a set of expected short names onto real column names, tolerating the
+    separators and case instrument exports add between them."""
+    lookup = {re.sub(r"[_\s\-.]", "", str(c)).lower(): c for c in columns}
+    return [lookup[k] for k in keys if k in lookup] if all(k in lookup for k in keys) else None
+
+
+def _mueller_columns(columns) -> list[str] | None:
+    """The 16 elements of a Mueller matrix, but only when the table says so.
+
+    A 4x4 block of numbers is not evidence of a matrix -- most four-by-four
+    tables are not -- so the claim is made by the column names and nothing else.
+    """
+    return _named_block(columns, _MUELLER_CELLS)
+
+
+def _stokes_columns(columns) -> list[str] | None:
+    return _named_block(columns, ("s0", "s1", "s2", "s3"))
+
+
 def _ordered(values) -> bool:
     values = values.dropna()
     return (
@@ -625,44 +648,18 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
     def by_tier(items):
         return sorted(items, key=lambda r: (TIER_ORDER.index(r.tier), r.rank))[:8]
 
-    if (
-        p.source_column
-        and p.target_column
-        and _valid_count(data, [p.source_column, p.target_column])
-    ):
-        nodes = pd.unique(
-            data[[p.source_column, p.target_column]].dropna().astype(str).to_numpy().ravel()
-        )
-        if len(nodes) <= 18:
-            add(
-                "flow",
-                "流程 / 关系图",
-                "high",
-                "存在 source/target 边列表，节点和箭头可直接由已提供关系构建",
-                {"source": p.source_column, "target": p.target_column},
-                0,
-            )
-    if p.n_rows == 1:
+    mueller = _mueller_columns(p.numeric_columns)
+    if mueller:
         add(
-            "table",
-            "数据表",
+            "mueller_matrix",
+            "Mueller 矩阵 4×4",
             "high",
-            "只有一行观测，表格可完整保留数值与标签",
-            {"columns": p.columns},
+            "列名给出 m00…m33 全部 16 个元素，按 4×4 展示；色标以零为中心并对称于最大绝对值，"
+            "因为负元素在偏振里有符号含义而不是「数值小」；"
+            + (f"当前 {p.n_rows} 行，只显示第一行" if p.n_rows > 1 else "每个元素标出数值"),
+            {"cells": mueller},
             0,
         )
-        return by_tier(out)
-
-    group = next(
-        (c for c in p.categorical_columns if 2 <= data[c].nunique() <= min(12, p.n_rows // 2)), None
-    )
-    x = next((c for c in p.axis_columns if c in eligible), eligible[0] if eligible else None)
-    if x and group is None:
-        group = _parameter_group(
-            data, x, [c for c in p.axis_columns if c != x], p.n_rows
-        )
-    responses = [c for c in eligible if c != x and c != group and c not in p.angle_columns]
-    y = responses[0] if responses else None
     if p.matrix_like and p.n_rows >= 2 and len(p.numeric_columns) >= 2:
         add(
             "matrix_heatmap",
@@ -735,6 +732,56 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 1,
             )
 
+    if (
+        p.source_column
+        and p.target_column
+        and _valid_count(data, [p.source_column, p.target_column])
+    ):
+        nodes = pd.unique(
+            data[[p.source_column, p.target_column]].dropna().astype(str).to_numpy().ravel()
+        )
+        if len(nodes) <= 18:
+            add(
+                "flow",
+                "流程 / 关系图",
+                "high",
+                "存在 source/target 边列表，节点和箭头可直接由已提供关系构建",
+                {"source": p.source_column, "target": p.target_column},
+                0,
+            )
+    if p.n_rows == 1:
+        add(
+            "table",
+            "数据表",
+            "high",
+            "只有一行观测，表格可完整保留数值与标签",
+            {"columns": p.columns},
+            0,
+        )
+        return by_tier(out)
+
+    group = next(
+        (c for c in p.categorical_columns if 2 <= data[c].nunique() <= min(12, p.n_rows // 2)), None
+    )
+    x = next((c for c in p.axis_columns if c in eligible), eligible[0] if eligible else None)
+    if x and group is None:
+        group = _parameter_group(
+            data, x, [c for c in p.axis_columns if c != x], p.n_rows
+        )
+    responses = [c for c in eligible if c != x and c != group and c not in p.angle_columns]
+    y = responses[0] if responses else None
+    stokes = _stokes_columns(p.numeric_columns)
+    if stokes:
+        add(
+            "poincare_sphere",
+            "Poincaré 球与偏振态轨迹",
+            "high",
+            f"{stokes[1]}…{stokes[3]} 以 {stokes[0]} 归一后画进球内；"
+            "点落在球内不强行投影到球面——半径本身就是偏振度，"
+            "S0≤0 或分量不全的行不参与；若有点在球外说明 Stokes 不自洽，仍按实测量画出",
+            {"stokes": stokes, "label": x or "measurement"},
+            0,
+        )
     if p.angle_columns and not p.grid_like:
         theta = p.angle_columns[0]
         radius = next((c for c in eligible if c != theta and c not in p.axis_columns), None)

@@ -369,6 +369,8 @@ AXES_LEFT_ALONE = {
     "polar",
     "polar_db",
     "polar_and_cartesian",
+    "mueller_matrix",
+    "poincare_sphere",
     "correlation",
     "flow",
     "table",

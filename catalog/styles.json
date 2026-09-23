@@ -561,6 +561,33 @@
   "recipe": "标准差为零的行除以零后留空而不是报 0；若图中出现整行空白，说明该行本来就是平的，不要改成强行填充。"
  },
  {
+  "id": "mueller_matrix-01",
+  "label": "Mueller 矩阵的发散色标",
+  "patterns": [
+   "mueller_matrix"
+  ],
+  "data_schema": "m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33",
+  "recipe": "矩阵元素有正负且符号有物理含义，色标必须以零为中心、对称于最大绝对值；用顺序色带会把负元素读成「数值小」而不是「反号」。"
+ },
+ {
+  "id": "mueller_matrix-02",
+  "label": "互易性只报偏差不下结论",
+  "patterns": [
+   "mueller_matrix"
+  ],
+  "data_schema": "m00..m33",
+  "recipe": "图上给出 M 与其转置的最大偏差出现在哪一对元素；该偏差是否意味着样品非互易，取决于材料是否含磁光或手性组分，这是使用者的判断。"
+ },
+ {
+  "id": "mueller_matrix-03",
+  "label": "归一化与否要写明",
+  "patterns": [
+   "mueller_matrix"
+  ],
+  "data_schema": "m00..m33",
+  "recipe": "文献常报 M/M00 的归一化矩阵；本图按实测值着色并在色标注明与 M00 同量纲，两种口径混用会让消光比一类的读数差几个数量级。"
+ },
+ {
   "id": "peak_annotation-01",
   "label": "激光峰值波长与半高宽读数",
   "patterns": [
@@ -613,6 +640,33 @@
   ],
   "data_schema": "gate_voltage_V, wavelength_nm, transmission",
   "recipe": "存在多个峰时必须先指定跟踪哪一个（最接近某波长、或最高），否则逐角度取最大值会让峰位在两个峰之间跳变；本图型默认取内部极值，多峰须人工核对。"
+ },
+ {
+  "id": "poincare_sphere-01",
+  "label": "偏振态随波长的轨迹",
+  "patterns": [
+   "poincare_sphere"
+  ],
+  "data_schema": "wavelength_nm, S0, S1, S2, S3",
+  "recipe": "以 S0 归一后画在球内，轨迹顺序即波长顺序；点不强行投影到球面——半径就是偏振度，压到球面等于宣称完全偏振。"
+ },
+ {
+  "id": "poincare_sphere-02",
+  "label": "球外点的处理",
+  "patterns": [
+   "poincare_sphere"
+  ],
+  "data_schema": "wavelength_nm, S0, S1, S2, S3",
+  "recipe": "|S|/S0 > 1 说明 Stokes 参数不自洽（噪声、定标漂移或串扰），图上按实测量画出并在标题计数，不做归一化修正，否则掩盖了定标问题。"
+ },
+ {
+  "id": "poincare_sphere-03",
+  "label": "视角是数据的一部分",
+  "patterns": [
+   "poincare_sphere"
+  ],
+  "data_schema": "S0, S1, S2, S3",
+  "recipe": "三维轨迹的可读性取决于视角：正对某条轴时球面退化成圆盘、轨迹重叠。view_elevation 与 view_azimuth 需要按数据调，定稿前换一个角度复核。"
  },
  {
   "id": "polar-01",

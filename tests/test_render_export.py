@@ -710,6 +710,97 @@ def test_a_user_title_goes_above_the_scale_note_rather_than_over_it():
     assert titled.startswith("旋转台扫描") and bare in titled
 
 
+# ── Mueller matrix and Poincaré sphere ─────────────────────────────
+def mueller_frame():
+    # asymmetric on purpose, so the transpose deviation has something to report
+    return pd.DataFrame([{f"m{i}{j}": 0.5 * (i - j) for i in range(4) for j in range(4)}])
+
+
+def test_a_four_by_four_block_is_not_claimed_to_be_a_mueller_matrix():
+    """Four rows of four numbers is an ordinary table; only names m00…m33 make
+    the claim, and the recommender must not make it on the reader's behalf."""
+    plain = analyze_dataframe(
+        pd.DataFrame({f"c{i}": [1.0, 2.0, 3.0, 4.0] for i in range(4)})
+    )
+    assert "mueller_matrix" not in {r.id for r in recommend(plain)}
+    named = analyze_dataframe(mueller_frame())
+    assert "mueller_matrix" in {r.id for r in recommend(named)}
+
+
+def test_the_mueller_grid_is_labelled_and_centred_on_zero():
+    p = analyze_dataframe(mueller_frame())
+    rec = next(r for r in recommend(p) if r.id == "mueller_matrix")
+    ax = render(p, rec).axes[0]
+    assert len(ax.texts) == 16, "every element should carry its own value"
+    assert [t.get_text() for t in ax.get_xticklabels()] == ["S0", "S1", "S2", "S3"]
+    norm = ax.images[0].norm
+    assert norm.vcenter == 0.0, "a signed matrix needs a diverging scale"
+    assert norm.vmin == pytest.approx(-norm.vmax)
+
+
+def test_the_mueller_transpose_deviation_is_reported_as_a_number_only():
+    p = analyze_dataframe(mueller_frame())
+    rec = next(r for r in recommend(p) if r.id == "mueller_matrix")
+    title = render(p, rec).axes[0].get_title(loc="left")
+    assert "与转置矩阵最大偏差" in title and "结合样品类型判断" in title, title
+
+
+def test_stokes_columns_are_normalised_by_s0_not_projected_onto_the_sphere():
+    """The radius is the degree of polarisation; pushing every point onto the
+    surface would assert full polarisation the measurement does not show."""
+    p = analyze_file(ROOT / "examples" / "sample_stokes.csv")
+    rec = next(r for r in recommend(p) if r.id == "poincare_sphere")
+    ax = render(p, rec).axes[0]
+    trace = ax.lines[-1].get_data_3d()
+    radius = np.sqrt(sum(component**2 for component in trace))
+    assert radius.max() < 1.0, "this sample is partly polarised throughout"
+    assert float(np.nanmax(radius)) == pytest.approx(0.95, abs=0.01)
+    assert "0.95" in ax.get_title(loc="left")
+
+
+def test_unusable_stokes_rows_are_dropped_before_the_trace():
+    frame = pd.DataFrame(
+        {
+            "S0": [1.0, 2.0, 0.0, np.nan, 1.0],
+            "S1": [0.5, 1.0, 0.1, 0.2, 0.3],
+            "S2": [0.0, 0.0, 0.0, 0.0, 0.1],
+            "S3": [0.0, 0.1, 0.0, 0.0, 0.1],
+        }
+    )
+    p = analyze_dataframe(frame)
+    rec = next(r for r in recommend(p) if r.id == "poincare_sphere")
+    ax = render(p, rec).axes[0]
+    assert ax.lines[-1].get_data_3d()[0].size == 3, "S0<=0 and the NaN row must not trace"
+
+
+def test_an_inconsistent_stokes_set_is_counted_not_rescaled():
+    frame = pd.DataFrame(
+        {
+            "S0": [1.0, 1.0, 1.0],
+            "S1": [0.9, 0.8, 0.2],
+            "S2": [0.5, 0.4, 0.1],
+            "S3": [0.4, 0.3, 0.1],
+        }
+    )
+    p = analyze_dataframe(frame)
+    rec = next(r for r in recommend(p) if r.id == "poincare_sphere")
+    ax = render(p, rec).axes[0]
+    assert "球外" in ax.get_title(loc="left") and "不自洽" in ax.get_title(loc="left")
+    trace = ax.lines[-1].get_data_3d()
+    assert float(np.sqrt(trace[0][0] ** 2 + trace[1][0] ** 2 + trace[2][0] ** 2)) > 1.0
+
+
+def test_the_sphere_view_angle_is_a_real_control():
+    from optiplot.style import Style
+
+    p = analyze_file(ROOT / "examples" / "sample_stokes.csv")
+    rec = next(r for r in recommend(p) if r.id == "poincare_sphere")
+    default = render(p, rec).axes[0]
+    turned = render(p, rec, style=Style(view_elevation=70.0, view_azimuth=10.0)).axes[0]
+    assert (default.elev, default.azim) != (turned.elev, turned.azim)
+    assert (turned.elev, turned.azim) == (70.0, 10.0)
+
+
 def test_normalisation_makes_each_line_zero_mean_unit_spread():
     p, _ = tilt_grid()
     rec = next(r for r in recommend(p) if r.id == "heatmap_normalized")
