@@ -49,6 +49,8 @@ FIGURE_TYPES = (
     "contour",
     "matrix_heatmap",
     "polar",
+    "polar_db",
+    "polar_and_cartesian",
     "distribution",
     "box",
     "correlation",
@@ -67,6 +69,9 @@ SURFACE_KINDS = (
 )
 # Which coordinate is held fixed when each line of the grid is standardised.
 NORMALIZATIONS = ("per_y", "per_x")
+# Angular response views: one polar frame, one dB frame, and one that pairs the
+# polar frame with the same data on a straight axis.
+POLAR_KINDS = ("polar", "polar_db", "polar_and_cartesian")
 
 
 # A difference crosses zero by construction, so a log axis there is meaningless;
@@ -480,6 +485,7 @@ def render(profile, rec, output=None, options=None, style=None):
         )
         marginal_axes = None
         residual_ax = None
+        cartesian_ax = None
         if rec.id == "heatmap_marginals":
             # The colour bar gets its own column: a colorbar built from `ax`
             # shrinks only that axes, which would pull the map out of alignment
@@ -499,14 +505,24 @@ def render(profile, rec, output=None, options=None, style=None):
                 fig.add_subplot(grid[1, 1], sharey=ax),
                 fig.add_subplot(grid[:, 2]),
             )
+        elif rec.id in POLAR_KINDS:
+            if rec.id == "polar_and_cartesian":
+                # Two readings of one sweep, side by side: the polar frame shows
+                # the symmetry, the straight one shows what the rim hides, namely
+                # how the trace behaves where the angle wraps.
+                grid = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.30)
+                ax = fig.add_subplot(grid[0], projection="polar")
+                cartesian_ax = fig.add_subplot(grid[1])
+            else:
+                ax = fig.add_subplot(111, projection="polar")
         elif fit_choice in _MODEL_IDS:
             # A named model always brings its residuals: a curve that looks right
             # is exactly the case where the reader needs the difference shown.
             ax, residual_ax = fig.subplots(2, 1, height_ratios=[3.2, 1.0], sharex=True)
         else:
-            ax = fig.add_subplot(111, projection="polar" if rec.id == "polar" else None)
+            ax = fig.add_subplot(111)
             residual_ax = None
-        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes)
+        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes, cartesian_ax)
         if residual_ax is not None:
             # One row of x labels for one shared axis: the strip underneath carries
             # them, as it does in every published residual panel.
@@ -515,7 +531,15 @@ def render(profile, rec, output=None, options=None, style=None):
             residual_ax.set_xlabel(ax.get_xlabel() or "")
             ax.set_xlabel("")
         if opts.get("title"):
-            ax.set_title(opts["title"], pad=14, loc="left")
+            # A renderer note (what the dB reference is, how many cells were
+            # hidden) carries the meaning of the figure, so a user title goes
+            # above it rather than replacing it.
+            note = ax.get_title(loc="left")
+            ax.set_title(
+                opts["title"] if not note else f"{opts['title']}\n{note}",
+                pad=14,
+                loc="left",
+            )
         if opts.get("xlabel"):
             ax.set_xlabel(opts["xlabel"])
         if opts.get("ylabel"):
@@ -563,7 +587,8 @@ def render(profile, rec, output=None, options=None, style=None):
         return fig
 
 
-def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=None):
+def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=None,
+         cartesian_ax=None):
     palette = style.colors
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
@@ -1086,23 +1111,64 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
         ax.set(xlabel=xn, ylabel=yn)
         ax.grid(False)
         return
-    elif kind == "polar":
+    elif kind in POLAR_KINDS:
         theta, r = e["theta"], e["r"]
         d = _finite(df, [theta, r])
         unit = opts.get("angle_unit", e.get("angle_unit", "deg"))
-        angles = d[theta].to_numpy()
-        angles = np.deg2rad(angles) if unit in ["deg", "degrees"] else angles
-        if (d[r] < 0).any():
+        angles = np.deg2rad(d[theta].to_numpy()) if unit in ["deg", "degrees"] else d[theta].to_numpy()
+        radius = d[r].to_numpy()
+        if (radius < 0).any():
             raise ValueError("极坐标半径存在负值，请使用角度-响应折线图以保留符号。")
         ix = np.argsort(angles)
-        ax.plot(
-            angles[ix],
-            d[r].to_numpy()[ix],
-            color=palette[0 % len(palette)],
-            label=r,
-            **style.series_style(0),
-        )
+        angles, radius = angles[ix], radius[ix]
+        # Kept in the unit the file used: converting to radians and back to draw
+        # the straight-axis panel would give it values that are not the ones read.
+        degrees = d[theta].to_numpy()[ix]
+        if kind == "polar_db":
+            live = radius > 0
+            if not live.any():
+                raise ValueError("分贝方向图要求至少一个正的半径值：0 与负数取对数无定义。")
+            factor = float(style.db_factor)
+            reference = float(np.nanmax(radius))
+            # A zero reading is not -inf dB, it is below the plotted floor; those
+            # points are dropped and counted rather than drawn at the rim.
+            dropped = int((~live).sum())
+            plotted = factor * np.log10(np.where(live, radius, np.nan) / reference)
+            # The depth follows the data, capped by db_floor: a fixed -30 dB rim
+            # would squash a pattern that only spans 5 dB into the outer ring and
+            # throw away the whole radius.
+            shallowest = float(np.nanmin(plotted))
+            # Round outward, not inward: rounding in would clip the tail of the
+            # pattern and report it as points that did not fit.
+            depth = min(float(style.db_floor), max(5.0, 5.0 * math.ceil(-shallowest / 5.0)))
+            clipped = int((plotted < -depth).sum())
+            inside = live & (plotted >= -depth)
+            ax.plot(
+                angles[inside],
+                plotted[inside],
+                color=palette[0 % len(palette)],
+                label=r,
+                **style.series_style(0),
+            )
+            ax.set_rlim(-depth, 0.0)
+            ax.set_rlabel_position(90)
+            note = (
+                f"0 dB = {reference:.4g} {r}，按 {factor:g}·log10；"
+                f"径向画到 −{depth:g} dB"
+            )
+            unseen = dropped + clipped
+            if unseen:
+                note += f"；{unseen} 点为 0/负值或低于该范围，未画"
+            ax.set_title(note, loc="left", pad=10, fontsize=style.resolved_font_size() * 0.85)
+        else:
+            ax.plot(angles, radius, color=palette[0 % len(palette)], label=r, **style.series_style(0))
         _legend(ax, style, loc="upper right", bbox_to_anchor=(1.35, 1.13))
+        if kind == "polar_and_cartesian" and cartesian_ax is not None:
+            cartesian_ax.plot(
+                degrees, radius, color=palette[0 % len(palette)], label=r, **style.series_style(0)
+            )
+            cartesian_ax.set(xlabel=f"{theta} ({unit})", ylabel=r)
+            _legend(cartesian_ax, style)
         return
     elif kind in ["distribution", "box"]:
         value = e.get("value", numeric[0] if numeric else None)

@@ -607,6 +607,109 @@ def test_a_surface_and_its_contours_are_both_drawn():
     assert ax.collections[1].get_paths(), "contour lines missing"
 
 
+# ── polar: dB scale and the multi-turn pair ────────────────────────
+def antenna_profile(minimum=1e-6):
+    a = np.linspace(0.0, 360.0, 721)
+    power = np.abs(np.sinc(np.deg2rad(a) * 6)) ** 2 + minimum
+    return analyze_dataframe(pd.DataFrame({"theta_deg": a, "far_field_W": power}))
+
+
+def test_the_dB_reference_sits_at_zero_and_halves_at_minus_three():
+    """0 dB is the peak by construction, and half the power must read -3.01 dB.
+    A factor applied to the wrong kind of quantity shows up exactly here."""
+    p = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "theta_deg": [0.0, 90.0, 180.0, 270.0],
+                "far_field_W": [1.0, 0.5, 0.25, 0.125],
+            }
+        )
+    )
+    rec = next(r for r in recommend(p) if r.id == "polar_db")
+    ydata = render(p, rec, style=Style(db_floor=30.0)).axes[0].lines[0].get_ydata()
+    assert ydata == pytest.approx([0.0, -3.0103, -6.0206, -9.0309], abs=1e-3)
+
+
+def test_plotted_decibels_are_measured_values_transformed_not_a_fitted_curve():
+    p = antenna_profile()
+    rec = next(r for r in recommend(p) if r.id == "polar_db")
+    ydata = render(p, rec).axes[0].lines[0].get_ydata()
+    raw = p.data["far_field_W"].to_numpy()
+    expected = 10.0 * np.log10(raw / raw.max())
+    assert float(np.nanmax(ydata)) == pytest.approx(0.0, abs=1e-9)
+    assert set(np.round(ydata, 9)) <= set(np.round(expected, 9))
+
+
+def test_the_field_factor_doubles_the_decibel_span():
+    """10·log10 for a power quantity, 20·log10 for a field amplitude; the column
+    name cannot tell them apart, so the figure has to say which it used."""
+    p = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "theta_deg": [0.0, 90.0, 180.0, 270.0],
+                "far_field_W": [1.0, 0.5, 0.25, 0.125],
+            }
+        )
+    )
+    rec = next(r for r in recommend(p) if r.id == "polar_db")
+    power = render(p, rec, style=Style(db_factor=10.0)).axes[0].lines[0].get_ydata()
+    field = render(p, rec, style=Style(db_factor=20.0)).axes[0].lines[0].get_ydata()
+    assert power == pytest.approx([0.0, -3.0103, -6.0206, -9.0309], abs=1e-3)
+    assert field == pytest.approx(2.0 * power, abs=1e-6)
+    assert "20·log10" in render(p, rec, style=Style(db_factor=20.0)).axes[0].get_title(loc="left")
+
+
+def test_the_radial_depth_follows_the_data_and_says_what_it_clipped():
+    shallow = analyze_dataframe(
+        pd.DataFrame({"theta_deg": np.arange(0.0, 360.0, 5.0), "resp_W": 0.6 + 0.4 * np.cos(np.deg2rad(np.arange(0.0, 360.0, 5.0)))})
+    )
+    rec = next(r for r in recommend(shallow) if r.id == "polar_db")
+    title = render(shallow, rec).axes[0].get_title(loc="left")
+    assert "未画" not in title, "a 40 % modulation should fit inside the radius"
+    assert "−10 dB" in title or "−5 dB" in title, title
+
+    deep = antenna_profile()
+    drec = next(r for r in recommend(deep) if r.id == "polar_db")
+    dtitle = render(deep, drec, style=Style(db_floor=30.0)).axes[0].get_title(loc="left")
+    assert "−30 dB" in dtitle and "未画" in dtitle, dtitle
+
+
+def test_a_pattern_reaching_zero_is_counted_not_plotted_at_the_rim():
+    a = np.arange(0.0, 360.0, 3.0)
+    power = np.where(np.isclose(np.mod(a, 90.0), 0.0), 0.0, 1.0)
+    p = analyze_dataframe(pd.DataFrame({"theta_deg": a, "far_field_W": power}))
+    rec = next(r for r in recommend(p) if r.id == "polar_db")
+    title = render(p, rec).axes[0].get_title(loc="left")
+    assert "0/负值" in title and "4" in title, title
+    assert not np.isnan(render(p, rec).axes[0].lines[0].get_ydata()).any()
+
+
+def test_a_multi_turn_scan_gets_the_unwrapped_pair_and_a_single_turn_does_not():
+    multi = analyze_file(ROOT / "examples" / "sample_multi_turn.csv")
+    assert "polar_and_cartesian" in {r.id for r in recommend(multi)}
+    single = analyze_file(ROOT / "examples" / "sample_polarization.csv")
+    assert "polar_and_cartesian" not in {r.id for r in recommend(single)}
+
+
+def test_both_panels_of_the_pair_draw_the_same_numbers():
+    p = analyze_file(ROOT / "examples" / "sample_multi_turn.csv")
+    rec = next(r for r in recommend(p) if r.id == "polar_and_cartesian")
+    fig = render(p, rec)
+    polar, cartesian = fig.axes
+    assert np.array_equal(polar.lines[0].get_ydata(), cartesian.lines[0].get_ydata())
+    assert cartesian.lines[0].get_xdata() == pytest.approx(p.data["rotator_angle_deg"].to_numpy())
+
+
+def test_a_user_title_goes_above_the_scale_note_rather_than_over_it():
+    """The note carries the dB reference and how many points were dropped; a
+    title is decoration and must not delete it."""
+    p = analyze_file(ROOT / "examples" / "sample_multi_turn.csv")
+    rec = next(r for r in recommend(p) if r.id == "polar_db")
+    bare = render(p, rec).axes[0].get_title(loc="left")
+    titled = render(p, rec, options={"title": "旋转台扫描"}).axes[0].get_title(loc="left")
+    assert titled.startswith("旋转台扫描") and bare in titled
+
+
 def test_normalisation_makes_each_line_zero_mean_unit_spread():
     p, _ = tilt_grid()
     rec = next(r for r in recommend(p) if r.id == "heatmap_normalized")

@@ -310,6 +310,8 @@ class Style:
     missing_fill: str = "none"
     masked_fill: str = "lightgrey"
     mask_below: float | None = None
+    db_factor: float = 10.0
+    db_floor: float = 30.0
     marginal_height: float = 0.28
     colorbar_thickness: float = 0.046
     colorbar_pad: float = 0.03
@@ -453,6 +455,11 @@ class Style:
             raise ValueError(f"image_shading 需是 {'/'.join(SHADINGS)} 之一")
         if self.missing_fill not in MISSING_FILLS:
             raise ValueError(f"missing_fill 需是 {'/'.join(MISSING_FILLS)} 之一")
+        if float(self.db_factor) not in (10.0, 20.0):
+            raise ValueError("db_factor 只能是 10（功率量）或 20（场幅量），当前 "
+                             f"{self.db_factor}")
+        if not 3.0 <= float(self.db_floor) <= 90.0:
+            raise ValueError(f"db_floor 需在 3–90 dB 之间，当前 {self.db_floor}")
         if self.masked_fill not in MASKED_FILLS:
             raise ValueError(f"masked_fill 需是 {'/'.join(MASKED_FILLS)} 之一")
         if self.mask_below is not None:

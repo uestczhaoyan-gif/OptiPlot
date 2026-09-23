@@ -367,6 +367,8 @@ AXES_LEFT_ALONE = {
     "contour",
     "matrix_heatmap",
     "polar",
+    "polar_db",
+    "polar_and_cartesian",
     "correlation",
     "flow",
     "table",

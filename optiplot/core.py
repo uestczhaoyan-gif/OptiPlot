@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import csv
 import io
+import math
 import re
 
 import numpy as np
@@ -777,6 +778,36 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 enc,
                 2,
             )
+            span = float(data[theta].dropna().max() - data[theta].dropna().min())
+            full = 360.0 if p.angle_units.get(theta, "deg") == "deg" else 2 * math.pi
+            if span > full:
+                # More than one turn lands on the same ray, so the figure cannot
+                # show which pass a given point belongs to.
+                add(
+                    "polar_and_cartesian",
+                    "极坐标 + 直角双显示",
+                    "high",
+                    f"{theta} 的扫描跨度 {span:g} 超过一圈，"
+                    "不同圈的同一角度落在同一条射线上，极坐标单独看不出是哪一圈；"
+                    "右侧直角面板保留展开后的顺序",
+                    enc.copy(),
+                    1,
+                )
+            positive = data[radius].dropna()
+            # Zero is allowed and reported: a pattern with a true null still has a
+            # meaningful dB skirt, and the renderer counts what it cannot place.
+            if len(positive) >= 3 and (positive >= 0).all():
+                add(
+                    "polar_db",
+                    "分贝刻度方向图",
+                    "medium",
+                    f"半径改为 10·log10({radius}/最大值)，旁瓣与后瓣才看得见——"
+                    "线性半径会把它们压成看不见的一圈；"
+                    f"若 {radius} 是场幅而不是功率，须把 db_factor 改成 20，"
+                    "用错因子是 2 倍的标度误差，图上会标出用的是哪一个",
+                    enc.copy(),
+                    2,
+                )
 
     if x and y and _valid_count(data, [x, y]) >= 2:
         enc = {"x": x, "y": y}
