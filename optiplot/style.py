@@ -56,6 +56,9 @@ AXIS_STYLED = frozenset(
         "spectral_envelope",
         "spectral_derivative",
         "energy_axis",
+        "log_log",
+        "semi_log",
+        "cumulative_response",
         "dual_axis",
         "peak_evolution",
         "scatter_fit",
@@ -85,6 +88,7 @@ DATA_KEYS = frozenset(
         "ylabel",
         "xlog",
         "ylog",
+        "cumulative",
     }
 )
 # Multipliers, not absolute points: raising the base size should move every
@@ -265,6 +269,10 @@ class Style:
     x_reverse: bool = False
     y_reverse: bool = False
     y_zero_centered: bool = False
+    # On a log-log plot the exponent *is* the slope, but only once the two axes
+    # share a scale: a taller canvas turns the same data into a steeper line.
+    # Pinning the aspect trades empty margin for that readability.
+    log_aspect_equal: bool = False
     # E legend
     legend: str = "best"
     legend_columns: int = 1

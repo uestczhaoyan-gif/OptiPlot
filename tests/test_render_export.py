@@ -1116,3 +1116,179 @@ def test_new_types_are_medium_tier():
         assert found is not None, f"{name} not offered on {sample}"
         assert found.tier == "medium", name
         assert "请" in found.reason or "不" in found.reason, f"{name} states no caveat"
+
+
+# ── axis-scale diagnostics and the cumulative view ─────────────────
+def broadband():
+    """A 250 nm – 25 um detector sweep: two decades of wavelength, all positive,
+    with one unmeasured atmospheric window in the middle."""
+    return analyze_file(ROOT / "examples" / "sample_broadband_det.csv")
+
+
+def decay():
+    return analyze_file(ROOT / "examples" / "sample_pl_decay.csv")
+
+
+def test_the_log_views_need_decades_in_the_data_not_a_taste_for_them():
+    """Under one decade of axis, log ticks compress the curve into a corner and
+    settle nothing; the span is the precondition, not the user's preference."""
+    narrow = analyze_file(ROOT / "examples" / "sample_spectrum.csv")
+    ids = {r.id for r in recommend(narrow)}
+    assert "log_log" not in ids and "semi_log" not in ids
+    assert {"log_log", "semi_log", "cumulative_response"} <= {
+        r.id for r in recommend(broadband())
+    }
+
+
+def test_one_non_positive_reading_withdraws_the_log_views():
+    """A log axis has no place for a zero, so the view goes away. The renderer
+    also refuses when the choice is forced, rather than dropping the row and
+    handing back a curve with a bite taken out of it."""
+    p = broadband()
+    zeroed = analyze_dataframe(
+        p.data.assign(responsivity_a_w=p.data.responsivity_a_w.mask(p.data.index == 10, 0.0))
+    )
+    ids = {r.id for r in recommend(zeroed)}
+    assert "log_log" not in ids and "semi_log" not in ids
+    assert "cumulative_response" in ids, "an integral tolerates a zero reading"
+    with pytest.raises(ValueError, match="对数轴"):
+        render(zeroed, pick(p, "log_log"))
+
+
+def test_the_exponent_the_log_log_view_promises_is_the_one_the_data_carries():
+    """The sweep is R = eta·lambda·q/hc with eta held flat, so its exponent is
+    exactly one. A view that advertises the exponent and cannot return it is
+    decoration."""
+    p = broadband()
+    fig = render(p, pick(p, "log_log"), options={"fit": "power_law"})
+    label = fig.axes[0].get_lines()[-1].get_label()
+    exponent = float(re.search(r"k=([-+0-9.eE]+)", label).group(1))
+    assert 0.9 < exponent < 1.1, label
+    assert len(fig.axes) == 2, "a named model must bring its residual strip"
+
+
+def test_the_model_curve_is_sampled_along_the_axis_it_is_drawn_on():
+    """Three hundred points spread linearly over two decades all fall in the top
+    one, leaving the low end joined by chords."""
+    p = broadband()
+    fig = render(p, pick(p, "log_log"), options={"fit": "power_law"})
+    steps = np.diff(np.asarray(fig.axes[0].get_lines()[-1].get_xdata(), dtype=float))
+    assert (steps > 0).all()
+    assert steps.max() / steps.min() > 5.0, "the overlay is still on a linear grid"
+
+
+def test_semi_log_logs_the_vertical_axis_and_no_option_turns_it_back():
+    p = decay()
+    rec = pick(p, "semi_log")
+    axes = render(p, rec, options={"xlog": False, "ylog": False}).axes[0]
+    assert (axes.get_xscale(), axes.get_yscale()) == ("linear", "log")
+    assert "exp(-x/τ)" in axes.get_title(loc="left")
+
+
+def test_the_residual_strip_names_the_space_it_is_measured_in():
+    """Under a logged axis a reader reasonably takes a residual to be a ratio.
+    These are differences, and the largest points dominate them."""
+    p = decay()
+    fig = render(p, pick(p, "semi_log"), options={"fit": "single_exponential"})
+    assert "原始数值空间" in fig.axes[1].get_title(loc="left")
+
+
+def test_equal_aspect_is_what_makes_a_log_log_slope_a_number():
+    """Same data, same line, different canvas: the visual exponent is a property
+    of the box, so the note has to change with it."""
+    p = broadband()
+    rec = pick(p, "log_log")
+    loose = render(p, rec).axes[0]
+    tight = render(p, rec, style=Style(log_aspect_equal=True)).axes[0]
+    assert loose.get_aspect() == "auto"
+    # matplotlib resolves the "equal" alias to the number it means
+    assert tight.get_aspect() in ("equal", 1.0)
+    assert "长宽比" in loose.get_title(loc="left")
+    assert "45°" in tight.get_title(loc="left")
+
+
+def test_the_cumulative_total_starts_at_zero_and_only_covers_the_sweep():
+    p = broadband()
+    axes = render(p, pick(p, "cumulative_response")).axes[0]
+    y = np.asarray(axes.get_lines()[0].get_ydata(), dtype=float)
+    assert y[0] == 0.0, "the origin is a definition, not a measurement"
+    assert np.all(np.diff(y[np.isfinite(y)]) >= 0.0)
+    assert "累积" in axes.get_lines()[0].get_label(), "the legend must not name the raw column"
+    assert "×" in axes.get_ylabel(), "the integral's unit is the product of both axes"
+    title = axes.get_title(loc="left")
+    assert "末值只覆盖已扫区间" in title
+    assert "1 段跨过缺测点" in title, "the sweep has one window to reach over"
+
+
+def test_a_hole_inside_the_sweep_continues_the_line_and_one_past_the_end_does_not():
+    """Between two measured points the trapezoid already fixed the total, so
+    breaking the curve there would hide a claim that was made. Past the last
+    measured point nothing was claimed, so the line stops."""
+    def cumulative(values):
+        frame = pd.DataFrame(
+            {"t_s": np.arange(1.0, 6.0), "signal_au": values}
+        )
+        rec = Recommendation(
+            "cumulative_response", "累积", "medium", "", {"x": "t_s", "y": ["signal_au"]}
+        )
+        axes = render(analyze_dataframe(frame), rec).axes[0]
+        return np.asarray(axes.get_lines()[0].get_ydata(), dtype=float)
+
+    inside = cumulative([1.0, 1.0, np.nan, 1.0, 1.0])
+    assert not np.isnan(inside).any(), inside
+    assert inside == pytest.approx([0.0, 1.0, 2.0, 3.0, 4.0])
+    edge = cumulative([np.nan, 1.0, 1.0, 1.0, np.nan])
+    assert np.isnan(edge[0]) and np.isnan(edge[-1]), edge
+    assert edge[1:-1] == pytest.approx([0.0, 1.0, 2.0])
+
+
+def test_the_accumulation_follows_the_coordinate_and_not_the_acquisition_order():
+    """A sweep that returns out of order must not accumulate one point's total
+    into another point's row."""
+    frame = pd.DataFrame(
+        {
+            "t_s": [4.0, 5.0, 1.0, 2.0, 3.0],
+            "signal_au": [1.0, 1.0, 1.0, 1.0, 1.0],
+        }
+    )
+    rec = Recommendation(
+        "cumulative_response", "累积", "medium", "", {"x": "t_s", "y": ["signal_au"]}
+    )
+    axes = render(analyze_dataframe(frame), rec).axes[0]
+    x = np.asarray(axes.get_lines()[0].get_xdata(), dtype=float)
+    y = np.asarray(axes.get_lines()[0].get_ydata(), dtype=float)
+    assert dict(zip(x, y)) == pytest.approx({1.0: 0.0, 2.0: 1.0, 3.0: 2.0, 4.0: 3.0, 5.0: 4.0})
+
+
+def test_fraction_mode_normalises_by_the_curve_itself():
+    p = broadband()
+    rec = pick(p, "cumulative_response")
+    axes = render(p, rec, options={"cumulative": "fraction"}).axes[0]
+    y = np.asarray(axes.get_lines()[0].get_ydata(), dtype=float)
+    assert np.nanmax(y) == pytest.approx(1.0)
+    assert "最大偏离" in axes.get_title(loc="left")
+    with pytest.raises(ValueError, match="cumulative"):
+        render(p, rec, options={"cumulative": "percent"})
+
+
+def test_a_fit_the_type_cannot_draw_is_refused_at_the_door():
+    """An accepted option that draws nothing looks answered. Curve types take a
+    fit, the rest say so - and the cumulative curve explains why a fit there
+    would describe the integral rather than the measurement."""
+    devices = analyze_file(ROOT / "examples" / "sample_devices.csv")
+    with pytest.raises(ValueError, match="box 不接受拟合"):
+        render(devices, pick(devices, "box"), options={"fit": "power_law"})
+    p = broadband()
+    with pytest.raises(ValueError, match="积分之后"):
+        render(p, pick(p, "cumulative_response"), options={"fit": "linear"})
+
+
+def test_linear_fit_on_a_curve_is_not_a_dead_control():
+    """`linear` was on the menu for every fittable type, but only the named
+    models were ever drawn on a curve, so choosing it returned a plot with no
+    line and no complaint."""
+    p = broadband()
+    axes = render(p, pick(p, "spectrum_lines"), options={"fit": "linear"}).axes[0]
+    assert len(axes.lines) == 2, "the OLS line is missing"
+    assert axes.lines[-1].get_label().startswith("OLS")
+    assert len(axes.figure.axes) == 1, "OLS keeps the single-panel convention"

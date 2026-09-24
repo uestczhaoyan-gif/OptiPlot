@@ -510,6 +510,20 @@ def _strictly_ordered(values) -> bool:
     return v.size >= 4 and bool(np.all(np.diff(v) > 0) or np.all(np.diff(v) < 0))
 
 
+def _decade_span(values) -> float:
+    """How many factors of ten a column covers, or 0.0 when it cannot be logged.
+
+    A log axis drops non-positive values rather than showing them, so a column
+    with a single zero in it does not have a small span; it has no span. The
+    caller treats 0.0 as "this view is not offerable", never as "flat".
+    """
+    v = values.dropna().to_numpy(dtype=float)
+    v = v[np.isfinite(v)]
+    if v.size < 2 or np.any(v <= 0):
+        return 0.0
+    return float(math.log10(v.max() / v.min()))
+
+
 _MUELLER_CELLS = tuple(f"m{i}{j}" for i in range(4) for j in range(4))
 
 
@@ -1096,6 +1110,54 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 {"x": x, "y": measured[:8]},
                 5,
             )
+
+        # --- scale diagnostics. A logged axis is not a cosmetic toggle: it asserts
+        # that one particular function family is being tested, so the reason names
+        # the family and what the axis still cannot settle.
+        x_span = _decade_span(data[x])
+        if x_span >= 2.0:
+            loggable = [c for c in measured if _decade_span(data[c]) >= 1.0]
+            if loggable:
+                add(
+                    "log_log",
+                    "双对数曲线（幂律诊断）",
+                    "medium",
+                    f"{x} 全为正值且跨 {x_span:.1f} 个数量级，{loggable[0]} 等 "
+                    f"{len(loggable)} 列同样全为正值，可画双对数；幂律 y = C·x^k 在这里"
+                    "是一条直线，但目视斜率随画布长宽比改变，要报出 k 得点名 power_law "
+                    "拟合，log_aspect_equal 只能让目视斜率与 k 对上而不给出数值",
+                    {"x": x, "y": loggable[:8]},
+                    6,
+                )
+        y_span = max([_decade_span(data[c]) for c in measured], default=0.0)
+        decayed = [c for c in measured if _decade_span(data[c]) >= 1.0]
+        if decayed:
+            add(
+                "semi_log",
+                "半对数曲线（指数诊断）",
+                "medium",
+                f"{decayed[0]} 等 {len(decayed)} 列全为正值且纵轴跨 {y_span:.1f} 个数量级，"
+                "线性纵轴上尾段会被压成贴着零线；半对数下指数衰减 y = A·exp(-x/τ) 是一条"
+                "直线，但直线只说明与指数族相符——它与幂律尾部区分不开，要分开请看拟合"
+                "残差面板而不是这条轴",
+                {"x": x, "y": decayed[:8]},
+                7,
+            )
+
+        if _strictly_ordered(data[x]) and measured:
+            integrated = [c for c in measured if _valid_count(data, [x, c]) >= 8]
+            if integrated:
+                add(
+                    "cumulative_response",
+                    "累积响应曲线",
+                    "medium",
+                    f"{x} 严格单调，{integrated[0]} 等 {len(integrated)} 列可沿横轴累积成一条"
+                    "单调曲线，用来回答「前一半区间贡献了多少」；积分只走相邻实测点之间的"
+                    "梯形，缺测处断线不桥接，因此末值是已扫区间的累计而不是全量程总量，"
+                    f"纵轴单位是 {integrated[0]} 单位乘以 {x} 单位",
+                    {"x": x, "y": integrated[:8]},
+                    8,
+                )
 
     # Peak tracking is a reduction, not a grid view: it needs a wavelength axis,
     # a second swept parameter, and a response, and it deliberately does not

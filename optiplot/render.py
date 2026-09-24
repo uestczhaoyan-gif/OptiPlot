@@ -22,7 +22,11 @@ _MODEL_IDS = frozenset(MODEL_BY_ID)
 FIT_CHOICES = ("none", "linear", *MODEL_BY_ID)
 # Types a fit can be applied to. The rest ignore the option, so an interface has
 # to say so rather than leave a control that does nothing look like it worked.
-FITTABLE = ("scatter_fit", "spectrum_lines")
+FITTABLE = ("scatter_fit", "spectrum_lines", "log_log", "semi_log")
+# Why a type outside that list refuses, when "not in the list" is not an answer.
+FIT_REFUSAL = {
+    "cumulative_response": "OLS 与具名模型讲的都是原始量的形状，累积曲线讲的是积分之后的量",
+}
 
 COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 # The authoritative list of drawable figure types. A new branch in _draw is not
@@ -38,6 +42,9 @@ FIGURE_TYPES = (
     "spectral_envelope",
     "spectral_derivative",
     "energy_axis",
+    "log_log",
+    "semi_log",
+    "cumulative_response",
     "dual_axis",
     "peak_evolution",
     "scatter_fit",
@@ -79,6 +86,15 @@ NORMALIZATIONS = ("per_y", "per_x")
 # Angular response views: one polar frame, one dB frame, and one that pairs the
 # polar frame with the same data on a straight axis.
 POLAR_KINDS = ("polar", "polar_db", "polar_and_cartesian")
+# Views of one ordered sweep drawn as connected lines: the plain curve, the two
+# scale diagnostics, and the running total. They share the acquisition-order body
+# and differ only in what is computed before the pen touches the canvas.
+LINE_KINDS = ("spectrum_lines", "log_log", "semi_log", "cumulative_response")
+# The axis a scale diagnostic logs whatever the caller asked for: the type exists
+# to make that reading, so an option switching it off would leave a plain curve
+# filed under a name that promises something else.
+FORCED_LOG = {"log_log": ("x", "y"), "semi_log": ("y",)}
+CUMULATIVE_MODES = ("absolute", "fraction")
 
 
 # A difference crosses zero by construction, so a log axis there is meaningless;
@@ -86,6 +102,9 @@ POLAR_KINDS = ("polar", "polar_db", "polar_and_cartesian")
 LOG_AXIS_TYPES = (
     "spectrum_lines",
     "peak_annotation",
+    "log_log",
+    "semi_log",
+    "cumulative_response",
     "spectral_ratio",
     "spectral_envelope",
     "energy_axis",
@@ -214,7 +233,10 @@ def _break_marks(left, right, style):
     right.spines["left"].set_visible(False)
 
 
-def _fit_overlay(ax, residual_ax, df, xname, yname, choice, palette, style, x_factor=1.0):
+def _fit_overlay(
+    ax, residual_ax, df, xname, yname, choice, palette, style, x_factor=1.0, log_x=False,
+    space_note="",
+):
     """Draw a named model over the data, and its residuals in the strip below.
 
     The strip is not an option the caller can drop: a model that looks right is
@@ -224,7 +246,14 @@ def _fit_overlay(ax, residual_ax, df, xname, yname, choice, palette, style, x_fa
     d = _finite(df, [xname, yname])
     x, y = d[xname].to_numpy(), d[yname].to_numpy()
     result = fit_model(model_for(choice), x, y, x_factor=x_factor)
-    grid = np.linspace(float(np.nanmin(x)), float(np.nanmax(x)), 300)
+    low, high = float(np.nanmin(x)), float(np.nanmax(x))
+    if log_x and low > 0:
+        # The parameters are still fitted in linear space; only the sampling of
+        # the drawn curve follows the axis, so a 300-point linear grid does not
+        # turn the first decade into visible straight segments.
+        grid = np.geomspace(low, high, 300)
+    else:
+        grid = np.linspace(low, high, 300)
     colour = palette[1 % len(palette)]
     ax.plot(
         grid,
@@ -240,14 +269,146 @@ def _fit_overlay(ax, residual_ax, df, xname, yname, choice, palette, style, x_fa
     residual_ax.vlines(x, 0.0, result.residual, color=colour, linewidth=0.9, zorder=2)
     residual_ax.set_ylabel("残差", fontsize=style.resolved_font_size() * 0.9)
     residual_ax.tick_params(labelsize=style.resolved_font_size() * 0.85)
-    if result.notes:
+    notes = list(result.notes)
+    if space_note:
+        notes.append(space_note)
+    if notes:
         residual_ax.set_title(
-            "；".join(result.notes),
+            "；".join(notes),
             loc="left",
             fontsize=style.resolved_font_size() * 0.85,
             color="#B3261E",
         )
     return result
+
+
+def _linear_overlay(ax, d, xname, yname, palette, style, log_x=False):
+    """Ordinary least squares drawn over the data.
+
+    Unlike a named model this one comes without a residual panel: a straight line
+    through a scatter is the traditional single-panel drawing, and its R-squared
+    is printed in the legend where the reader expects it.
+    """
+    x = d[xname].to_numpy(dtype=float)
+    y = d[yname].to_numpy(dtype=float)
+    if x.size < 3 or np.unique(x).size < 2:
+        raise ValueError("线性拟合至少需要 3 个点及两个不同的 X 值。")
+    coef = np.polyfit(x, y, 1)
+    low, high = float(np.nanmin(x)), float(np.nanmax(x))
+    xx = (
+        np.geomspace(low, high, 100)
+        if log_x and low > 0
+        else np.linspace(low, high, 100)
+    )
+    scatter = float(np.sum((y - y.mean()) ** 2))
+    r2 = 1 - float(np.sum((y - np.polyval(coef, x)) ** 2)) / scatter if scatter else float("nan")
+    ax.plot(
+        xx,
+        np.polyval(coef, xx),
+        color=palette[1 % len(palette)],
+        linewidth=max(0.9, float(style.line_width) * 0.85),
+        label=f"OLS: y={coef[0]:.3g}x{coef[1]:+.3g}; R²={r2:.3f}",
+    )
+    return coef
+
+
+def _cumulative_frame(df, e, mode):
+    """Running integral of each response column along the scan axis.
+
+    Returns the frame with the responses replaced by their running total, plus
+    how many steps had to span a hole in the scan. The trapezoid assumes the
+    integrand runs straight between neighbouring measured points; that is part
+    of what integrating sampled data means, not an interpolation of new samples,
+    but a step across a missing reading stretches the assumption and is counted
+    so the reader knows the total is not a blind quadrature.
+    """
+    xn = e["x"]
+    ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+    out = df.copy()
+    bridged = 0
+    for yname in ys:
+        pair = (
+            out[[xn, yname]]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+        )
+        px = pair[xn].to_numpy(dtype=float)
+        py = pair[yname].to_numpy(dtype=float)
+        live = np.isfinite(px) & np.isfinite(py)
+        if live.sum() < 2:
+            raise ValueError(f"{yname} 沿 {xn} 的有效配对少于两点，无法累积。")
+        order = np.argsort(px[live], kind="mergesort")
+        x = px[live][order]
+        y = py[live][order]
+        steps = np.diff(x)
+        # A step spans a hole when a coordinate the instrument reported as missing
+        # sits inside it. Judging "unusually long" by the global median would flag
+        # the upper half of a logarithmic axis as a hole every time.
+        holes = px[np.isfinite(px) & ~live]
+        # Count the steps that span, not the holes spanned: two missing readings
+        # in a row are one interval the quadrature had to reach across.
+        spanning = (
+            ((x[:-1, None] < holes) & (holes < x[1:, None])).any(axis=1)
+            if holes.size
+            else np.zeros(steps.shape, dtype=bool)
+        )
+        bridged += int(spanning.sum())
+        total = np.concatenate(([0.0], np.cumsum(steps * (y[1:] + y[:-1]) / 2.0)))
+        if mode == "fraction":
+            span = float(np.nanmax(np.abs(total)))
+            if span == 0.0:
+                raise ValueError(f"{yname} 的累积值恒为零，无法归一化成占比。")
+            total = total / span
+        column = np.full(len(pair), np.nan)
+        # `total` is ordered by the coordinate, `column` by the row: undo the
+        # permutation before writing, or an acquisition that ran out of order
+        # accumulates one point's total into another point's slot.
+        inverse = np.empty(order.size, dtype=int)
+        inverse[order] = np.arange(order.size)
+        column[live] = total[inverse]
+        # Between two measured points the accumulated value is exactly as defined
+        # as the trapezoid that produced it, so the line is drawn continuous there
+        # and the note counts the reaches; outside the measured range nothing is
+        # claimed, so the curve still breaks.
+        interior = np.isfinite(px) & ~live & (px > x[0]) & (px < x[-1])
+        if interior.any():
+            column[interior] = np.interp(px[interior], x, total)
+        out[yname] = column
+    return out, bridged
+
+
+def _scale_note(kind, style, xname, bridged, mode):
+    """What a scale-diagnostic axis claims to show, and what it still leaves open.
+
+    The canvas-dependent part matters: on a log-log plot the slope is only a
+    number once the aspect ratio is pinned, so a note that promised "slope is the
+    exponent" without saying which would let a reader measure a straight line and
+    report an exponent that came from the figure size.
+    """
+    if kind == "log_log":
+        slope = (
+            "纵横已等比：45° 即幂指数 1"
+            if style.log_aspect_equal
+            else "目视斜率取决于画布长宽比，报出 k 请拟合 power_law"
+        )
+        return f"双对数坐标：幂律 y = C·x^k 在此为直线，斜率即 k\n{slope}"
+    if kind == "semi_log":
+        return (
+            "半对数坐标：纵轴按数量级读数，指数衰减 y = A·exp(-x/τ) 在此为直线\n"
+            "直线不排除幂律尾部，零与负值不在这条轴上"
+        )
+    if kind == "cumulative_response":
+        head = (
+            f"沿 {xname} 升序以梯形法累积，末值只覆盖已扫区间"
+            if mode == "absolute"
+            else f"沿 {xname} 升序累积后按曲线自身最大偏离归一（不是按末值）"
+        )
+        # Two lines because the note is read-critical and the canvas is not: a
+        # single long line runs off the right edge once the axes box narrows.
+        if bridged:
+            head += f"\n{bridged} 段跨过缺测点，其间按两端实测点线性计入"
+        return head
+    return ""
 
 
 def _grid_of(df, e, numeric):
@@ -516,6 +677,16 @@ def render(profile, rec, output=None, options=None, style=None):
         raise ValueError(
             f"未知拟合选项 {fit_choice!r}；可选 none、linear、" + "、".join(MODEL_BY_ID)
         )
+    if fit_choice != "none" and rec.id not in FITTABLE:
+        # Same failure the other dead controls had: the option is accepted, the
+        # figure comes back without the curve, and nothing says which of the two
+        # was wrong. A type that has no fitting path says so at the door.
+        reason = FIT_REFUSAL.get(rec.id)
+        raise ValueError(
+            f"{rec.id} 不接受拟合"
+            + (f"（{reason}）" if reason else "")
+            + f"；可拟合的图型是 {'、'.join(FITTABLE)}"
+        )
     with matplotlib.rc_context(style.rc_params()):
         fig = Figure(
             figsize=style.size_inches(), dpi=style.preview_dpi, **style.figure_kwargs()
@@ -620,7 +791,7 @@ def render(profile, rec, output=None, options=None, style=None):
         if opts.get("ylabel"):
             ax.set_ylabel(opts["ylabel"])
         for axis in ["x", "y"]:
-            if opts.get(axis + "log"):
+            if opts.get(axis + "log") or axis in FORCED_LOG.get(rec.id, ()):
                 if rec.id not in LOG_AXIS_TYPES:
                     raise ValueError("此图型不支持对数轴。")
                 mapped = enc.get(axis, enc.get("value") if kind_for_log(rec.id, axis) else None)
@@ -688,11 +859,19 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
             ax.plot([], [], color=color, label=str(name))
         _legend(ax, style, title=group)
         return
-    if kind == "spectrum_lines":
+    if kind in LINE_KINDS:
         xname = e["x"]
         ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
         if not 1 <= len(ys) <= 8:
             raise ValueError("曲线请选择 1–8 个响应列。")
+        mode = bridged = None
+        if kind == "cumulative_response":
+            mode = str(opts.get("cumulative", e.get("cumulative", "absolute")))
+            if mode not in CUMULATIVE_MODES:
+                raise ValueError(
+                    f"cumulative 需是 {'/'.join(CUMULATIVE_MODES)} 之一，当前 {mode!r}"
+                )
+            df, bridged = _cumulative_frame(df, e, mode)
         for i, yname in enumerate(ys):
             d = (
                 df[[xname, yname]]
@@ -705,27 +884,59 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                 d[yname],
                 color=palette[i % len(palette)],
                 drawstyle="steps-mid" if style.step else "default",
-                label=yname,
+                # A curve of integrals must not be legended by the column it came
+                # from, or the reader compares it against the raw values.
+                label=f"{yname}（累积）" if kind == "cumulative_response" else yname,
                 **style.series_style(i),
             )
         choice = str(opts.get("fit", e.get("fit", "none")))
-        if choice in _MODEL_IDS:
+        log_x = kind == "log_log" or bool(opts.get("xlog"))
+        if choice not in ("none", ""):
             if len(ys) != 1:
-                raise ValueError("模型拟合一次只能作用于一条曲线，请先只选一个响应列。")
-            _fit_overlay(
-                ax,
-                residual_ax,
-                _finite(df, [xname, ys[0]]),
-                xname,
-                ys[0],
-                choice,
-                palette,
-                style,
-                x_factor=math.pi / 180.0
-                if str(opts.get("angle_unit", "deg")) == "deg"
-                else 1.0,
-            )
-        ax.set(xlabel=xname, ylabel=ys[0] if len(ys) == 1 else "Response")
+                raise ValueError("一次只能给一条曲线加拟合，请先只选一个响应列。")
+            if choice == "linear":
+                _linear_overlay(
+                    ax,
+                    _finite(df, [xname, ys[0]]),
+                    xname,
+                    ys[0],
+                    palette,
+                    style,
+                    log_x=log_x,
+                )
+            else:
+                _fit_overlay(
+                    ax,
+                    residual_ax,
+                    _finite(df, [xname, ys[0]]),
+                    xname,
+                    ys[0],
+                    choice,
+                    palette,
+                    style,
+                    x_factor=math.pi / 180.0
+                    if str(opts.get("angle_unit", "deg")) == "deg"
+                    else 1.0,
+                    log_x=log_x,
+                    space_note="残差在原始数值空间计算，大值点主导"
+                    if (kind in ("log_log", "semi_log") or opts.get("ylog"))
+                    else "",
+                )
+        ylabel = ys[0] if len(ys) == 1 else "Response"
+        if kind == "cumulative_response":
+            # The integral's unit is the product of the two axes' units, which a
+            # bare column name on the label would quietly drop.
+            ylabel = f"累积 {ys[0]} × {xname}" if len(ys) == 1 else "累积值"
+            if mode == "fraction":
+                ylabel = "累积占比" if len(ys) == 1 else "累积占比（各列按自身归一）"
+        ax.set(xlabel=xname, ylabel=ylabel)
+        if kind == "log_log" and style.log_aspect_equal:
+            # Equal aspect is the only way the exponent is readable as a slope;
+            # without it the same data looks steeper on a taller canvas.
+            ax.set_aspect("equal", adjustable="box")
+        note = _scale_note(kind, style, xname, bridged, mode)
+        if note:
+            ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
         _legend(ax, style)
     elif kind == "broken_spectrum":
         xname = e["x"]
@@ -1103,17 +1314,14 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                 zorder=style.series_zorder,
             )
             if choice == "linear":
-                if len(d) < 3 or np.unique(x).size < 2:
-                    raise ValueError("线性拟合至少需要 3 个点及两个不同的 X 值。")
-                coef = np.polyfit(x, y, 1)
-                xx = np.linspace(x.min(), x.max(), 100)
-                ss = np.sum((y - y.mean()) ** 2)
-                r2 = 1 - np.sum((y - np.polyval(coef, x)) ** 2) / ss if ss else float("nan")
-                ax.plot(
-                    xx,
-                    np.polyval(coef, xx),
-                    color=palette[1 % len(palette)],
-                    label=f"OLS: y={coef[0]:.3g}x{coef[1]:+.3g}; R²={r2:.3f}",
+                _linear_overlay(
+                    ax,
+                    d,
+                    xname,
+                    yname,
+                    palette,
+                    style,
+                    log_x=bool(opts.get("xlog")),
                 )
                 _legend(ax, style)
             elif choice in _MODEL_IDS:
