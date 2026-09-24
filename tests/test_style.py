@@ -366,6 +366,8 @@ AXES_LEFT_ALONE = {
     "heatmap_normalized",
     "contour",
     "matrix_heatmap",
+    "surface_3d",
+    "surface_with_contour",
     "polar",
     "polar_db",
     "polar_and_cartesian",

@@ -1489,6 +1489,60 @@
   "recipe": "温度序列堆叠用于同时展示峰位红移与强度淬灭；每条曲线须按同一偏移量抬升，不要为美观而单独缩放某一条，否则温升趋势会被读成噪声。"
  },
  {
+  "id": "surface_3d-01",
+  "label": "形状用三维、数值用热图",
+  "patterns": [
+   "surface_3d"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "透视投影下高度不能对着刻度读，前面还会挡住后面；这张图回答「形状像什么」，要取具体数值请回到热图或等高线。"
+ },
+ {
+  "id": "surface_3d-02",
+  "label": "纵向拉伸只改形状",
+  "patterns": [
+   "surface_3d"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "z_exaggeration 改的是外框比例而不是 z 值，刻度仍是实测量；只要不等于 1 就在标题写明，因为此时任何斜率、倾角与锥度的目视判断都失效。"
+ },
+ {
+  "id": "surface_3d-03",
+  "label": "盒型比例不声称真实",
+  "patterns": [
+   "surface_3d"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "z 与 x/y 量纲不同，不存在「正确的」长宽高比；外框归一成立方体再加声明的拉伸，避免把单位选择伪装成样品的几何。"
+ },
+ {
+  "id": "surface_3d-04",
+  "label": "视角必须复核",
+  "patterns": [
+   "surface_3d"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "正对某条轴时表面退化成一片、脊与谷互换显眼程度；定稿前用 view_elevation 与 view_azimuth 至少换一个角度确认看到的不是遮挡造成的假象。"
+ },
+ {
+  "id": "surface_with_contour-01",
+  "label": "立体与俯视并置",
+  "patterns": [
+   "surface_with_contour"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "左看形状右读数值，两幅共用同一批格点与同一色标；等高线一侧按 contour_levels 分层，层数不够时俯视会显得比立体更平滑。"
+ },
+ {
+  "id": "surface_with_contour-02",
+  "label": "不要只留立体那一半",
+  "patterns": [
+   "surface_with_contour"
+  ],
+  "data_schema": "x_um, y_um, intensity_au",
+  "recipe": "把右半裁掉单独发立体图，就失去了这张图存在的理由——并置是为了承认透视读不出数值。"
+ },
+ {
   "id": "table-01",
   "label": "位置与通道响应表",
   "patterns": [

@@ -694,6 +694,27 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
     if p.grid_like and len(p.grid_columns) == 3:
         gx, gy, gz = p.grid_columns
         enc = {"x": gx, "y": gy, "z": gz}
+        dims = (data[gx].nunique(), data[gy].nunique())
+        if min(dims) >= 5:
+            add(
+                "surface_3d",
+                "三维表面图",
+                "medium",
+                f"{gx} × {gy} 的完整网格（{dims[0]}×{dims[1]}）可以立起来看整体形状；"
+                "但透视投影下高度无法对着刻度读、前面会挡住后面，"
+                "要取数值请改用热图或等高线",
+                enc.copy(),
+                3,
+            )
+            add(
+                "surface_with_contour",
+                "三维表面 + 俯视等高线",
+                "medium",
+                "左侧立体看形状，右侧俯视等高线读数值，两幅共用同一批格点；"
+                "单独一张三维图不能同时给出可读的高度，这个配对就是为了补上那一条",
+                enc.copy(),
+                3,
+            )
         add(
             "heatmap",
             "二维参数热图",

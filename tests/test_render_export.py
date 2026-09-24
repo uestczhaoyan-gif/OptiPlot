@@ -1,6 +1,7 @@
 """End-to-end plot, export and data-integrity regression checks."""
 
 from pathlib import Path
+import dataclasses
 import json
 import re
 import subprocess
@@ -783,6 +784,121 @@ def test_nothing_is_drawn_inside_the_omitted_interval():
         for line in panel.get_lines()
         for x in np.asarray(line.get_xdata(), dtype=float)
     )
+
+
+# ── three-dimensional surfaces ─────────────────────────────────────
+def surface_grid(holes=False):
+    """A complete 41x33 map: dense enough to have a shape, and the shipped case
+    whose candidate list still holds the surface types inside the eight-place
+    cap."""
+    profile = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    if holes:
+        profile = analyze_dataframe(
+            profile.data.assign(
+                intensity_au=profile.data.intensity_au.mask(
+                    profile.data.index.isin([3, 40, 81])
+                )
+            )
+        )
+    return profile
+
+
+def pick(profile, kind):
+    return next(r for r in recommend(profile) if r.id == kind)
+
+
+def test_a_surface_needs_a_grid_dense_enough_to_have_a_shape():
+    """A three-by-three patch of numbers has no surface to show; standing it up
+    in perspective would be decoration over a guess."""
+    coarse = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "x_um": np.repeat(np.arange(3.0), 3),
+                "y_um": np.tile(np.arange(3.0), 3),
+                "height_au": np.arange(9.0),
+            }
+        )
+    )
+    ids = {r.id for r in recommend(coarse)}
+    assert "heatmap" in ids, "three by three is still a colour map"
+    assert not {"surface_3d", "surface_with_contour"} & ids
+    assert {"surface_3d", "surface_with_contour"} <= {r.id for r in recommend(surface_grid())}
+
+
+def test_a_surface_with_holes_is_not_offered_as_a_surface():
+    """A missing cell leaves a hole in a mesh, not a dip; the perspective view
+    would read it as topography."""
+    with_holes = surface_grid(holes=True)
+    ids = {r.id for r in recommend(with_holes)}
+    assert "heatmap" in ids, "a partly-sampled grid still paints, with holes"
+    assert "surface_3d" not in ids
+
+
+def test_exaggeration_changes_the_box_not_the_numbers():
+    """The whole honesty case for vertical scaling: the ticks must still read the
+    measured range, or the axis would lie in units rather than in shape."""
+    from optiplot.style import Style
+
+    p = surface_grid()
+    rec = pick(p, "surface_3d")
+    plain = render(p, rec)
+    tall = render(p, rec, style=Style(z_exaggeration=2.5))
+    assert plain.axes[0].get_zlim() == pytest.approx(tall.axes[0].get_zlim())
+    # get_box_aspect returns matplotlib's normalised result, so compare the shape
+    # it produced rather than the numbers that were asked for
+    def stretch(axes):
+        x, _, z = axes.get_box_aspect()
+        return z / x
+
+    assert stretch(tall.axes[0]) == pytest.approx(2.5 * stretch(plain.axes[0]), rel=0.02)
+    assert "×2.5" in tall.axes[0].get_title(loc="left")
+    assert "斜率" in tall.axes[0].get_title(loc="left")
+    assert plain.axes[0].get_title() == ""
+
+
+def test_the_view_angle_reaches_the_axes_and_both_panels_share_the_scale():
+    from optiplot.style import Style
+
+    p = surface_grid()
+    rec = pick(p, "surface_3d")
+    turned = render(p, rec, style=Style(view_elevation=65.0, view_azimuth=-20.0)).axes[0]
+    assert (turned.elev, turned.azim) == (65.0, -20.0)
+
+    pair = pick(p, "surface_with_contour")
+    fig = render(p, pair)
+    assert len(fig.axes) == 3, "surface, contour and one colour bar"
+    surface, contour = fig.axes[0], fig.axes[1]
+    assert contour.collections, "the flat panel drew no contours"
+    # contourf pads the top level and the 3D box pads on autoscale, so the two
+    # ranges are never equal. What must hold is that both cover the measurements:
+    # a value outside one panel's colour range would be coloured wrongly there.
+    data = p.data["intensity_au"].dropna().to_numpy()
+    for span in (contour.collections[0].get_clim(), surface.get_zlim()):
+        assert span[0] <= data.min() and data.max() <= span[1], span
+
+
+def test_the_colour_bar_is_a_column_of_its_own():
+    """Built from a 3D parent it lands on top of whichever panel sits to the
+    right, and the z label overprints its label."""
+    p = surface_grid()
+    rec = pick(p, "surface_with_contour")
+    fig = render(p, rec)
+    bar = fig.axes[-1]
+    assert bar.get_ylabel() == "intensity_au"
+    assert fig.axes[0].get_zlabel() == "", "the bar already names the quantity"
+
+
+def test_no_surface_shading_knob_exists():
+    """Matplotlib 3.11 applies plot_surface's `shade` only on the solid-colour
+    path; with a colormap standing in for z it is ignored entirely, so a
+    `surface_shade` option would have been a control that changes nothing. This
+    asserts the absence so it is not quietly re-added."""
+    from optiplot.style import Style
+
+    assert "surface_shade" not in {f.name for f in dataclasses.fields(Style)}
+    p = surface_grid()
+    rec = pick(p, "surface_3d")
+    assert render(p, rec).axes[0].collections, "the surface still draws"
 
 
 # ── Mueller matrix and Poincaré sphere ─────────────────────────────

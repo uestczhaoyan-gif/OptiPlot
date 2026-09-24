@@ -315,6 +315,7 @@ class Style:
     db_floor: float = 30.0
     view_elevation: float = 18.0
     view_azimuth: float = -58.0
+    z_exaggeration: float = 1.0
     marginal_height: float = 0.28
     colorbar_thickness: float = 0.046
     colorbar_pad: float = 0.03
@@ -461,6 +462,10 @@ class Style:
         if float(self.db_factor) not in (10.0, 20.0):
             raise ValueError("db_factor 只能是 10（功率量）或 20（场幅量），当前 "
                              f"{self.db_factor}")
+        if not 0.2 <= float(self.z_exaggeration) <= 5.0:
+            raise ValueError(
+                f"z_exaggeration 需在 0.2–5 之间（纵向放大倍数），当前 {self.z_exaggeration}"
+            )
         for name in ("view_elevation", "view_azimuth"):
             if not -90.0 <= float(getattr(self, name)) <= 360.0:
                 raise ValueError(f"{name} 需在 -90 到 360 度之间，当前 {getattr(self, name)}")

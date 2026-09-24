@@ -49,6 +49,8 @@ FIGURE_TYPES = (
     "heatmap_normalized",
     "contour",
     "matrix_heatmap",
+    "surface_3d",
+    "surface_with_contour",
     "polar",
     "polar_db",
     "polar_and_cartesian",
@@ -61,8 +63,10 @@ FIGURE_TYPES = (
     "table",
 )
 
-# Every view whose body is a measured two-dimensional grid painted as colour.
-SURFACE_KINDS = (
+# Views that paint a measured two-dimensional grid as colour on a flat axes.
+# Named for what they route, so a future three-dimensional "surface" type cannot
+# be swept in by the word alone.
+PAINTED_GRID_KINDS = (
     "heatmap",
     "heatmap_contours",
     "heatmap_marginals",
@@ -130,11 +134,19 @@ def _legend(ax, style, **overrides):
     return ax.legend(**style.legend_kwargs(), **overrides)
 
 
-def _colorbar(fig, m, ax, label, style):
-    """Artist-level styling: one of the two routing points rcParams cannot reach."""
-    cb = fig.colorbar(
-        m, ax=ax, label=label, fraction=style.colorbar_thickness, pad=style.colorbar_pad
-    )
+def _colorbar(fig, m, ax, label, style, dedicated=False):
+    """Artist-level styling: one of the two routing points rcParams cannot reach.
+
+    `dedicated` means `ax` is a colour-bar-only axes already placed by a
+    gridspec; shrinking a parent axes is a different operation and the two must
+    not be confused, or the bar steals canvas from the panel beside it.
+    """
+    if dedicated:
+        cb = fig.colorbar(m, cax=ax, label=label)
+    else:
+        cb = fig.colorbar(
+            m, ax=ax, label=label, fraction=style.colorbar_thickness, pad=style.colorbar_pad
+        )
     cb.outline.set_linewidth(0.7)
     cb.ax.yaxis.label.set_fontsize(style.resolved_font_size() * style.colorbar_scale)
     return cb
@@ -511,6 +523,7 @@ def render(profile, rec, output=None, options=None, style=None):
         marginal_axes = None
         residual_ax = None
         companion_ax = None
+        colour_axis = None
         if rec.id == "heatmap_marginals":
             # The colour bar gets its own column: a colorbar built from `ax`
             # shrinks only that axes, which would pull the map out of alignment
@@ -544,6 +557,24 @@ def render(profile, rec, output=None, options=None, style=None):
             grid = fig.add_gridspec(1, 2, width_ratios=[1.0, 1.0], wspace=0.06)
             ax = fig.add_subplot(grid[0])
             companion_ax = fig.add_subplot(grid[1], sharey=ax)
+        elif rec.id in ("surface_3d", "surface_with_contour"):
+            # The colour bar always takes its own column: created from a 3D parent
+            # it lands on top of whichever panel happens to sit to the right.
+            bars = max(0.05, float(style.colorbar_thickness) * 3.0)
+            if rec.id == "surface_3d":
+                grid = fig.add_gridspec(1, 2, width_ratios=[1.0, bars], wspace=0.06)
+                ax = fig.add_subplot(grid[0], projection="3d")
+                colour_axis = fig.add_subplot(grid[1])
+            else:
+                # Surface for shape, flat map for values: a perspective view
+                # cannot be read against a scale, and the pair says so without
+                # refusing the three-dimensional picture.
+                grid = fig.add_gridspec(
+                    1, 3, width_ratios=[1.3, 1.0, bars], wspace=0.02
+                )
+                ax = fig.add_subplot(grid[0], projection="3d")
+                companion_ax = fig.add_subplot(grid[1])
+                colour_axis = fig.add_subplot(grid[2])
         elif rec.id == "poincare_sphere":
             ax = fig.add_subplot(111, projection="3d")
         elif rec.id in POLAR_KINDS:
@@ -563,7 +594,10 @@ def render(profile, rec, output=None, options=None, style=None):
         else:
             ax = fig.add_subplot(111)
             residual_ax = None
-        _draw(ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes, companion_ax)
+        _draw(
+            ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes,
+            companion_ax, colour_axis,
+        )
         if residual_ax is not None:
             # One row of x labels for one shared axis: the strip underneath carries
             # them, as it does in every published residual panel.
@@ -629,7 +663,7 @@ def render(profile, rec, output=None, options=None, style=None):
 
 
 def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=None,
-         companion_ax=None):
+         companion_ax=None, colour_axis=None):
     palette = style.colors
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
@@ -1150,7 +1184,7 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                 )
         ax.set(xlabel=xname, ylabel=yname)
         _legend(ax, style)
-    elif kind in SURFACE_KINDS:
+    elif kind in PAINTED_GRID_KINDS:
         ux, uy, z, xn, yn, zn = _grid_of(df, e, numeric)
         # The threshold is judged against the measured value, before any
         # normalisation: a user setting 0.05 means five per cent of what they
@@ -1237,6 +1271,55 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                     fontsize=style.resolved_font_size() * 0.85,
                 )
         ax.grid(False)
+        return
+    elif kind in ("surface_3d", "surface_with_contour"):
+        ux, uy, z, xn, yn, zn = _grid_of(df, e, numeric)
+        cmap, norm = _surface_colormap(z, style)
+        mesh = np.ma.masked_invalid(z)
+        levels = ax.plot_surface(
+            *np.meshgrid(ux, uy),
+            mesh,
+            cmap=cmap,
+            norm=norm,
+            rstride=1,
+            cstride=1,
+            linewidth=0,
+            antialiased=False,
+            alpha=0.97,
+        )
+        ax.view_init(elev=float(style.view_elevation), azim=float(style.view_azimuth))
+        ax.set(xlabel=xn, ylabel=yn)
+        # The colour bar sits directly off the 3D box's back-right edge, which is
+        # exactly where a z label would land; naming the quantity twice there only
+        # produces two overprinted strings.
+        if colour_axis is None:
+            ax.set_zlabel(zn)
+        # z's units differ from x and y, so there is no honest "true" box ratio:
+        # the frame is normalised to a cube and only the declared exaggeration is
+        # applied, instead of a span ratio that silently encodes unit choice.
+        ax.set_box_aspect((1.0, 1.0, float(style.z_exaggeration)))
+        note = ""
+        if float(style.z_exaggeration) != 1.0:
+            note = (
+                f"纵向拉伸 ×{style.z_exaggeration:g}（只改形状，刻度仍是实测量；"
+                "此角度下斜率与倾角不可读）"
+            )
+        if note:
+            ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
+        if colour_axis is not None:
+            _colorbar(fig, levels, colour_axis, zn, style, dedicated=True)
+        if companion_ax is not None:
+            companion_ax.contourf(ux, uy, z, levels=style.contour_levels, cmap=cmap, norm=norm)
+            if style.contour_labels:
+                _labelled_contours(companion_ax, ux, uy, z, style)
+            companion_ax.set(xlabel=xn, ylabel=yn)
+            companion_ax.set_title(
+                "俯视等高线（读数值看这里）",
+                loc="left",
+                pad=8,
+                fontsize=style.resolved_font_size() * 0.85,
+            )
+            companion_ax.grid(False)
         return
     elif kind == "poincare_sphere":
         s0, s1, s2, s3 = (
