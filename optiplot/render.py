@@ -51,6 +51,9 @@ FIGURE_TYPES = (
     "peak_evolution",
     "scatter_fit",
     "density",
+    "scatter_marginals",
+    "bland_altman",
+    "pairs",
     "errorbar",
     "heatmap",
     "heatmap_contours",
@@ -98,6 +101,9 @@ LINE_KINDS = ("spectrum_lines", "log_log", "semi_log", "cumulative_response")
 # to make that reading, so an option switching it off would leave a plain curve
 # filed under a name that promises something else.
 FORCED_LOG = {"log_log": ("x", "y"), "semi_log": ("y",)}
+# Types that draw a grid of panels rather than one axes: their caption belongs to
+# the figure, not to whichever cell happens to be first.
+GRID_OWNED = ("pairs",)
 CUMULATIVE_MODES = ("absolute", "fraction")
 # Which figure option each type actually consumes, beyond the shared ones (title,
 # labels, encodings, log axes). An option that belongs to no drawn type is a dead
@@ -136,9 +142,22 @@ LOG_AXIS_TYPES = (
     "energy_axis",
     "scatter_fit",
     "density",
+    "scatter_marginals",
     "errorbar",
     "distribution",
 )
+
+
+def _bin_count(n_points: int, style) -> int:
+    """Histogram bins: the caller's number, or the sqrt(n) rule it overrides.
+
+    Shared by every histogram in the product - the single-column distribution, the
+    scatter's marginals, the pairs diagonal - so one `hist_bins` value means the
+    same thing in all three.
+    """
+    if style.hist_bins is not None:
+        return int(style.hist_bins)
+    return min(80, max(5, int(np.sqrt(n_points))))
 
 
 def _finite(df, names):
@@ -806,6 +825,7 @@ def render(profile, rec, output=None, options=None, style=None):
         residual_ax = None
         companion_ax = None
         colour_axis = None
+        grid_axes = None
         if rec.id == "heatmap_marginals":
             # The colour bar gets its own column: a colorbar built from `ax`
             # shrinks only that axes, which would pull the map out of alignment
@@ -825,6 +845,31 @@ def render(profile, rec, output=None, options=None, style=None):
                 fig.add_subplot(grid[1, 1], sharey=ax),
                 fig.add_subplot(grid[:, 2]),
             )
+        elif rec.id == "scatter_marginals":
+            # Same shape as the heatmap's marginal pair: the two profile panels
+            # share the scatter's axes, so the colour bar's column is not needed.
+            edge = max(0.05, min(0.8, float(style.marginal_height)))
+            grid = fig.add_gridspec(
+                2,
+                2,
+                width_ratios=[1.0, edge],
+                height_ratios=[edge, 1.0],
+                hspace=0.04,
+                wspace=0.04,
+            )
+            ax = fig.add_subplot(grid[1, 0])
+            marginal_axes = (
+                fig.add_subplot(grid[0, 0], sharex=ax),
+                fig.add_subplot(grid[1, 1], sharey=ax),
+            )
+        elif rec.id == "pairs":
+            cols = list(enc.get("columns") or [])
+            if not 3 <= len(cols) <= 5:
+                raise ValueError("成对图需要 3–5 个数值列；再多只是读不过来。")
+            grid_axes = fig.subplots(len(cols), len(cols))
+            # The bottom-left cell is the one panel with both an x label and a y
+            # label of its own, so it is what the shared post-processing addresses.
+            ax = grid_axes[-1][0]
         elif rec.id == "broken_spectrum":
             if style.x_min is not None or style.x_max is not None:
                 # The two panels' ranges are the split itself. Applying a manual
@@ -878,7 +923,7 @@ def render(profile, rec, output=None, options=None, style=None):
             residual_ax = None
         _draw(
             ax, fig, df, rec.id, enc, opts, style, residual_ax, marginal_axes,
-            companion_ax, colour_axis,
+            companion_ax, colour_axis, grid_axes,
         )
         if residual_ax is not None:
             # One row of x labels for one shared axis: the strip underneath carries
@@ -891,12 +936,17 @@ def render(profile, rec, output=None, options=None, style=None):
             # A renderer note (what the dB reference is, how many cells were
             # hidden) carries the meaning of the figure, so a user title goes
             # above it rather than replacing it.
-            note = ax.get_title(loc="left")
-            ax.set_title(
-                opts["title"] if not note else f"{opts['title']}\n{note}",
-                pad=14,
-                loc="left",
-            )
+            if rec.id in GRID_OWNED:
+                # A grid has no one panel to own the caption; putting it on a cell
+                # would make it look like that cell's title.
+                fig.suptitle(opts["title"], x=0.01, ha="left", y=0.995)
+            else:
+                note = ax.get_title(loc="left")
+                ax.set_title(
+                    opts["title"] if not note else f"{opts['title']}\n{note}",
+                    pad=14,
+                    loc="left",
+                )
         if opts.get("xlabel"):
             ax.set_xlabel(opts["xlabel"])
         if opts.get("ylabel"):
@@ -945,7 +995,7 @@ def render(profile, rec, output=None, options=None, style=None):
 
 
 def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=None,
-         companion_ax=None, colour_axis=None):
+         companion_ax=None, colour_axis=None, grid_axes=None):
     palette = style.colors
     numeric = list(df.select_dtypes(include="number").columns)
     if e.get("group") and kind in ["spectrum_lines", "scatter_fit", "errorbar", "polar"]:
@@ -1524,6 +1574,140 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                 _fit_overlay(ax, residual_ax, d, xname, yname, choice, palette, style)
                 _legend(ax, style)
         ax.set(xlabel=xname, ylabel=yname)
+    elif kind == "scatter_marginals":
+        xname, yname = e["x"], e["y"]
+        if marginal_axes is None:
+            raise ValueError("边缘直方图需要上、右两个面板。")
+        top_ax, right_ax = marginal_axes
+        d = _finite(df, [xname, yname])
+        ax.scatter(
+            d[xname],
+            d[yname],
+            s=style.scatter_size,
+            alpha=style.scatter_alpha,
+            color=palette[0 % len(palette)],
+            edgecolors=(palette[0 % len(palette)] if style.scatter_edge else "none"),
+            linewidths=style.marker_edge_width if style.scatter_edge else 0,
+            rasterized=len(d) > style.rasterize_above,
+            zorder=style.series_zorder,
+        )
+        bins = _bin_count(len(d), style)
+        top_ax.hist(d[xname], bins=bins, color=palette[0 % len(palette)], alpha=0.75, lw=0)
+        right_ax.hist(
+            d[yname], bins=bins, orientation="horizontal",
+            color=palette[0 % len(palette)], alpha=0.75, lw=0,
+        )
+        # The counts are one axis' worth of information each, and the panels share
+        # their scales with the scatter: `tick_params` hides labels per panel,
+        # where `set_yticklabels([])` would rewrite the shared formatter and blank
+        # the main axes too.
+        top_ax.tick_params(labelleft=False, labelbottom=False)
+        right_ax.tick_params(labelleft=False, labelbottom=False)
+        top_ax.set_yticks([])
+        right_ax.set_xticks([])
+        ax.set(xlabel=xname, ylabel=yname)
+        ax.set_title(
+            f"两条边缘各按 {bins} 个分箱统计实测点"
+            f"（{'hist_bins 指定' if style.hist_bins is not None else '分箱数按 sqrt(n) 默认'}），"
+            "分箱一变外观就变；边缘与散点用的是同一批 "
+            f"{len(d)} 行配对观测",
+            loc="left",
+            pad=8,
+            fontsize=style.resolved_font_size() * 0.85,
+        )
+    elif kind == "bland_altman":
+        a, b = e["a"], e["b"]
+        d = _finite(df, [a, b])
+        first = d[a].to_numpy(dtype=float)
+        second = d[b].to_numpy(dtype=float)
+        centre = (first + second) / 2.0
+        offset = first - second
+        bias = float(offset.mean())
+        spread = float(offset.std(ddof=1)) if offset.size > 1 else float("nan")
+        steps = float(style.agreement_sd)
+        ax.scatter(
+            centre,
+            offset,
+            s=style.scatter_size,
+            alpha=style.scatter_alpha,
+            color=palette[0 % len(palette)],
+            zorder=style.series_zorder,
+        )
+        ax.axhline(bias, color=palette[1 % len(palette)],
+                   linewidth=max(0.9, float(style.line_width) * 0.9),
+                   label=f"偏差均值 {bias:.4g}")
+        for sign, name in ((-1.0, "下"), (1.0, "上")):
+            ax.axhline(
+                bias + sign * steps * spread,
+                color="#7A94AB",
+                linestyle="--",
+                linewidth=0.9,
+                label=f"{name}限 {bias + sign * steps * spread:.4g}",
+            )
+        # No drift or outlier statistic is reported. A correlation against the level
+        # reads near zero for a symmetric U-shaped drift; a count of points outside
+        # the limits is worse than useless because the SD the limits are built from
+        # is not robust - one gross outlier widens both limits and lands back inside
+        # them. Both assumptions are stated for the reader to judge against the
+        # cloud, which is the panel they are looking at anyway.
+        ax.set(xlabel=f"两法均值（{a} 与 {b}）", ylabel=f"差值 {a} − {b}")
+        note = (
+            f"界限 = 偏差均值 ± {steps:g}×SD（SD {spread:.4g}，n {offset.size}）\n"
+            "上下限为常数、差值近似正态这两条都要看点云判断，图上不替你分辨；"
+            f"顺序决定符号，{a} 在前"
+        )
+        ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
+        _legend(ax, style)
+    elif kind == "pairs":
+        cols = list(e["columns"])
+        if grid_axes is None:
+            raise ValueError("成对图需要面板网格。")
+        bins = _bin_count(max(int(df[cols[0]].notna().sum()), 4), style)
+        size = max(2.0, float(style.scatter_size) * 0.28)
+        for i, ycol in enumerate(cols):
+            for j, xcol in enumerate(cols):
+                panel = grid_axes[i][j]
+                if i == j:
+                    values = pd.to_numeric(df[ycol], errors="coerce").dropna()
+                    panel.hist(values, bins=bins, color=palette[0 % len(palette)],
+                               alpha=0.75, lw=0)
+                    panel.set_title(f"n={values.size}", fontsize=style.resolved_font_size() * 0.72)
+                else:
+                    d = (
+                        df[[xcol, ycol]]
+                        .apply(pd.to_numeric, errors="coerce")
+                        .replace([np.inf, -np.inf], np.nan)
+                        .dropna()
+                    )
+                    if len(d) > 1 and np.ptp(d[xcol]) and np.ptp(d[ycol]):
+                        r = float(np.corrcoef(d[xcol], d[ycol])[0, 1])
+                        panel.set_title(
+                            f"r={r:+.2f} n={len(d)}",
+                            fontsize=style.resolved_font_size() * 0.72,
+                        )
+                        panel.scatter(
+                            d[xcol], d[ycol], s=size, alpha=style.scatter_alpha,
+                            color=palette[0 % len(palette)], zorder=style.series_zorder,
+                        )
+                    else:
+                        # An empty cell is a statement about the data: those two
+                        # columns never have a reading at the same row.
+                        panel.text(
+                            0.5, 0.5, "无成对观测", ha="center", va="center",
+                            transform=panel.transAxes,
+                            fontsize=style.resolved_font_size() * 0.72, color="#B3261E",
+                        )
+                        panel.set_title(f"n={len(d)}", fontsize=style.resolved_font_size() * 0.72)
+                panel.tick_params(labelsize=style.resolved_font_size() * 0.78)
+                if i < len(cols) - 1:
+                    panel.tick_params(labelbottom=False)
+                else:
+                    panel.set_xlabel(xcol)
+                if j > 0:
+                    panel.tick_params(labelleft=False)
+                else:
+                    panel.set_ylabel(ycol)
+                panel.grid(False)
     elif kind == "errorbar":
         xname, yname = e["x"], e["y"]
         yerr = e.get("yerr", e.get("error"))
@@ -1864,15 +2048,23 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
             ax.set(xlabel=group, ylabel=value)
         else:
             a = _finite(df, [value])[value]
+            bins = _bin_count(len(a), style)
             ax.hist(
                 a,
-                bins=min(80, max(5, int(np.sqrt(len(a))))),
+                bins=bins,
                 color=palette[0 % len(palette)],
                 alpha=style.series_alpha if style.series_alpha < 1 else 0.85,
                 edgecolor="white",
                 zorder=style.series_zorder,
             )
             ax.set(xlabel=value, ylabel="Count")
+            ax.set_title(
+                f"{bins} 箱（{'hist_bins 指定' if style.hist_bins is not None else 'sqrt(n) 默认'}）"
+                f"，n={a.size}；换分箱就会换外观",
+                loc="left",
+                pad=8,
+                fontsize=style.resolved_font_size() * 0.85,
+            )
     elif kind == "correlation":
         cols = e.get("columns", numeric)[:12]
         corr = df[cols].corr()

@@ -1452,6 +1452,194 @@ def test_the_two_family_views_refuse_each_others_option():
         render(p, pick(p, "curves_normalized"), options={"relative": True})
 
 
+# ── clouds, distributions and method agreement ─────────────────────
+def cloud(pairs=200, seed=5):
+    rng = np.random.default_rng(seed)
+    x = rng.normal(0.0, 1.0, pairs)
+    y = 0.6 * x + rng.normal(0.0, 0.5, pairs)
+    return analyze_dataframe(pd.DataFrame({"reference_V": x, "measured_V": y}))
+
+
+def test_the_marginals_count_the_same_rows_as_the_cloud():
+    """Three panels, one sample: a marginal computed from each column's own
+    non-missing rows would quietly disagree with the scatter about n."""
+    rng = np.random.default_rng(11)
+    frame = pd.DataFrame({"reference_V": rng.normal(size=60), "measured_V": rng.normal(size=60)})
+    frame.loc[[3, 17, 40], "measured_V"] = np.nan
+    p = analyze_dataframe(frame)
+    fig = render(p, pick(p, "scatter_marginals"))
+    main, top, right = fig.axes
+    assert len(main.collections[0].get_offsets()) == 57
+    bars = top.patches
+    assert len(bars) >= 5
+    assert int(sum(bar.get_height() for bar in bars)) == 57
+    assert int(sum(bar.get_width() for bar in right.patches)) == 57
+
+
+def test_the_marginal_panels_share_the_clouds_scale_and_keep_its_numbers():
+    """Two traps at once: the panels must read against the same axes, and hiding
+    their labels must not blank the main panel through the shared formatter."""
+    p = cloud()
+    fig = render(p, pick(p, "scatter_marginals"))
+    main, top, right = fig.axes
+    assert main.get_xlim() == pytest.approx(top.get_xlim())
+    assert main.get_ylim() == pytest.approx(right.get_ylim())
+    assert any(t.get_visible() for t in main.get_yticklabels())
+    assert not any(t.get_visible() for t in right.get_yticklabels())
+
+
+def test_hist_bins_is_one_knob_for_every_histogram():
+    """Three figure types draw histograms; a knob that moved only one of them
+    would make a shared style file inconsistent across a paper."""
+    p = cloud()
+    trio = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "a_nm": np.random.default_rng(1).normal(500.0, 20.0, 40),
+                "b_nm": np.random.default_rng(2).normal(520.0, 20.0, 40),
+                "c_nm": np.random.default_rng(3).normal(540.0, 20.0, 40),
+            }
+        )
+    )
+    legs = (
+        ("scatter_marginals", p, lambda f: f.axes[1]),
+        ("distribution", p, lambda f: f.axes[0]),
+        ("pairs", trio, lambda f: f.axes[0]),
+    )
+    for kind, profile, panel in legs:
+        rec = pick(profile, kind)
+        loose = panel(render(profile, rec)).get_ylim()
+        tight = panel(render(profile, rec, style=Style(hist_bins=30))).get_ylim()
+        assert loose != tight, f"{kind} ignored hist_bins"
+    counted = render(p, pick(p, "distribution"), style=Style(hist_bins=30)).axes[0]
+    assert len(counted.patches) == 30
+    assert "30 箱" in counted.get_title(loc="left")
+    assert "hist_bins 指定" in counted.get_title(loc="left")
+
+
+def test_the_default_histogram_says_its_bins_came_from_the_sample_size():
+    p = cloud()
+    axes = render(p, pick(p, "distribution")).axes[0]
+    assert "sqrt(n)" in axes.get_title(loc="left")
+
+
+def method_pair(n=60, seed=3):
+    """A reference instrument and a second one reading slightly high."""
+    rng = np.random.default_rng(seed)
+    reference = np.linspace(1.0, 8.0, n)
+    offset = rng.normal(0.05, 0.12, n)
+    return analyze_dataframe(
+        pd.DataFrame({"power_ref_W": reference, "power_meter_W": reference + offset})
+    )
+
+
+def test_the_limits_are_the_bias_plus_minus_the_declared_sd():
+    p = method_pair()
+    axes = render(p, pick(p, "bland_altman")).axes[0]
+    first = p.data.power_ref_W.to_numpy()
+    second = p.data.power_meter_W.to_numpy()
+    offset = first - second
+    bias, spread = offset.mean(), offset.std(ddof=1)
+    levels = sorted(float(line.get_ydata()[0]) for line in axes.lines)
+    assert levels == pytest.approx(
+        sorted([bias - 1.96 * spread, bias, bias + 1.96 * spread])
+    )
+    assert "1.96×SD" in axes.get_title(loc="left")
+
+
+def test_the_agreement_sd_is_declared_on_the_figure_when_moved():
+    p = method_pair()
+    rec = pick(p, "bland_altman")
+    wider = render(p, rec, style=Style(agreement_sd=3.0)).axes[0]
+    assert "± 3×SD" in wider.get_title(loc="left")
+    assert len(wider.lines) == 3
+
+
+def test_the_figure_states_its_assumptions_without_pretending_to_check_them():
+    """Two candidate statistics were measured and dropped. A correlation against
+    the level reads near zero for a symmetric U-shaped drift, and a count of
+    points outside the limits is worse: the SD is not robust, so a gross outlier
+    widens both limits and lands back inside them. The note claims only what the
+    cloud itself has to be read for."""
+    p = method_pair()
+    rec = pick(p, "bland_altman")
+    axes = render(p, rec).axes[0]
+    text = axes.get_title(loc="left")
+    assert "上下限是常数" in text or "上下限为常数" in text
+    assert "近似正态" in text
+    assert "r =" not in text and "落在界限之外" not in text
+    for phrase in ("p 值", "检验", "显著"):
+        assert phrase not in text
+    # and the assumption is the recommender's too, not just the caption's
+    assert "看点云判断" in rec.reason
+
+
+def test_method_agreement_needs_a_comparable_pair_of_columns():
+    """Subtracting an intensity from a position is arithmetically valid and
+    physically empty, so the pair has to name the same quantity."""
+    mixed = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "wavelength_nm": np.linspace(400.0, 800.0, 40),
+                "response_A": np.linspace(0.2, 0.9, 40),
+                "position_mm": np.linspace(1.0, 5.0, 40),
+            }
+        )
+    )
+    assert "bland_altman" not in {r.id for r in recommend(mixed)}
+    assert "bland_altman" in {r.id for r in recommend(method_pair())}
+    few = method_pair(n=6)
+    assert "bland_altman" not in {r.id for r in recommend(few)}, "six points cannot bound agreement"
+
+
+def test_pairs_uses_pairwise_complete_rows_and_says_so():
+    rng = np.random.default_rng(9)
+    frame = pd.DataFrame(
+        {
+            "a_nm": rng.normal(500.0, 20.0, 40),
+            "b_nm": rng.normal(520.0, 20.0, 40),
+            "c_nm": rng.normal(540.0, 20.0, 40),
+        }
+    )
+    # rows 0-19 have a and b, rows 20-39 have a and c: b and c never co-occur
+    frame.loc[:19, "c_nm"] = np.nan
+    frame.loc[20:, "b_nm"] = np.nan
+    p = analyze_dataframe(frame)
+    rec = pick(p, "pairs")
+    fig = render(p, rec)
+    n = len(rec.encodings["columns"])
+    assert n == 3
+    bc = fig.axes[1 * n + 2]  # row b, column c
+    assert any("无成对观测" in text.get_text() for text in bc.texts)
+    assert "n=0" in bc.get_title()
+
+
+def test_pairs_stops_at_five_columns_and_labels_only_the_outer_edges():
+    rng = np.random.default_rng(4)
+    frame = pd.DataFrame({f"channel_{i}_nm": rng.normal(size=30) for i in range(8)})
+    p = analyze_dataframe(frame)
+    rec = pick(p, "pairs")
+    assert len(rec.encodings["columns"]) == 5
+    fig = render(p, rec)
+    assert len(fig.axes) == 25
+    bottom = fig.axes[-1]
+    left = fig.axes[0]
+    assert bottom.get_xlabel() == rec.encodings["columns"][4]
+    assert left.get_ylabel() == rec.encodings["columns"][0]
+    inner = fig.axes[6]
+    assert inner.get_xlabel() == "" and inner.get_ylabel() == ""
+
+
+def test_a_grid_type_puts_its_title_on_the_figure_not_on_one_cell():
+    titled = render(analyze_file(ROOT / "examples" / "sample_liv_sweep.csv"),
+                    pick(analyze_file(ROOT / "examples" / "sample_liv_sweep.csv"), "pairs"),
+                    options={"title": "三参数成对检查"})
+    assert titled.get_suptitle().startswith("三参数成对检查")
+    assert not any(
+        ax.get_title() == "三参数成对检查" for ax in titled.axes
+    ), "the caption landed on a single panel"
+
+
 def test_no_figure_option_is_accepted_by_a_type_that_ignores_it():
     """The family pair made the rule explicit, but `normalize` on a plain heatmap
     and `cumulative` on a curve had the same silent no-effect."""

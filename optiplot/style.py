@@ -65,6 +65,9 @@ AXIS_STYLED = frozenset(
         "peak_evolution",
         "scatter_fit",
         "density",
+        "scatter_marginals",
+        "bland_altman",
+        "pairs",
         "errorbar",
         "distribution",
         "box",
@@ -318,6 +321,11 @@ class Style:
     rasterize_above: int = 5000
     contour_levels: int = 14
     hexbin_gridsize: int = 45
+    # Bin count for every histogram view (the distribution plot, the scatter's
+    # marginals, the pairs diagonal). None keeps the sqrt(n) rule, so the default
+    # figure is still the engine's choice and not a hidden opinion about bins.
+    hist_bins: int | None = None
+    agreement_sd: float = 1.96
     image_shading: str = "nearest"
     contour_labels: bool = False
     contour_line_color: str = "auto"
@@ -466,6 +474,14 @@ class Style:
             raise ValueError(f"error_line_width 需在 0.1–8 之间，当前 {self.error_line_width}")
         if not 1 <= int(self.contour_levels) <= 100:
             raise ValueError(f"contour_levels 需在 1–100 之间，当前 {self.contour_levels}")
+        if self.hist_bins is not None and not 2 <= int(self.hist_bins) <= 200:
+            raise ValueError(
+                f"hist_bins 需在 2–200 之间（或留空用 sqrt(n)），当前 {self.hist_bins}"
+            )
+        if not 1.0 <= float(self.agreement_sd) <= 4.0:
+            raise ValueError(
+                f"agreement_sd 需在 1–4 倍标准差之间，当前 {self.agreement_sd}"
+            )
         if not 3 <= int(self.hexbin_gridsize) <= 200:
             raise ValueError(f"hexbin_gridsize 需在 3–200 之间，当前 {self.hexbin_gridsize}")
         if self.image_shading not in SHADINGS:

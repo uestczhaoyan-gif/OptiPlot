@@ -70,7 +70,11 @@ def profile():
 
 def drawn(options=None, style=None):
     p = profile()
-    fig = render(p, recommend(p)[0], options=options, style=style)
+    # Pinned to the curve view rather than `recommend(p)[0]`: these tests are about
+    # series styling, and which candidate ranks first changes as figure types are
+    # added.
+    rec = next(r for r in recommend(p) if r.id == "spectrum_lines")
+    fig = render(p, rec, options=options, style=style)
     return fig, fig.axes[0]
 
 

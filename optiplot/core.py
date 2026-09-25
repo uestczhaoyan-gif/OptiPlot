@@ -45,9 +45,10 @@ class DataProfile:
 TIER_LABELS = {"high": "高", "medium": "中", "low": "低"}
 TIER_ORDER = ("high", "medium", "low")
 # How many candidates one dataset may put forward. Measured, not aesthetic: the
-# widest shipped shape asks for about a dozen, so anything lower starts deleting
-# views the engine had already justified.
-MAX_CANDIDATES = 16
+# widest shipped shape asks for sixteen today, so the bound sits a batch or two
+# above that - low enough to stop a pathological wide table flooding the list,
+# high enough that it never deletes a view the rules had already justified.
+MAX_CANDIDATES = 24
 
 
 @dataclass(frozen=True)
@@ -142,16 +143,11 @@ def _unit_of(name: str) -> str | None:
     return None
 
 
-def _comparable(a: str, b: str) -> bool:
-    """Whether two columns are the same kind of quantity, which is what makes a
-    difference or ratio meaningful.
-
-    Subtracting a position from an intensity is arithmetically valid and
-    physically empty, so the pair has to agree on unit when both name one, and
-    neither may be an independent variable.
+def _same_quantity(a: str, b: str) -> bool:
+    """Whether two column names describe the same kind of quantity, judged from
+    the names alone: agreement on a recognised unit, or a shared leading stem
+    when neither carries one.
     """
-    if _axis_rank(a) < 99 or _axis_rank(b) < 99:
-        return False
     ua, ub = _unit_of(a), _unit_of(b)
     if ua and ub:
         return ua == ub
@@ -163,6 +159,35 @@ def _comparable(a: str, b: str) -> bool:
         sb = re.split(r"[_\s.]+", str(b))[0].lower()
         return sa == sb
     return False
+
+
+def _comparable(a: str, b: str) -> bool:
+    """Whether two columns are the same kind of quantity, which is what makes a
+    difference or ratio meaningful.
+
+    Subtracting a position from an intensity is arithmetically valid and
+    physically empty, so the pair has to agree on unit when both name one, and
+    neither may be an independent variable.
+    """
+    if _axis_rank(a) < 99 or _axis_rank(b) < 99:
+        return False
+    return _same_quantity(a, b)
+
+
+def _twin_measurements(a: str, b: str) -> bool:
+    """Two readings of one quantity, for figures that difference paired rows.
+
+    Looser than `_comparable` on purpose: `power` and `voltage` name a rank-3
+    quantity that a sweep may use as its axis, but two power meters measuring the
+    same forty devices are the ordinary case in the lab, and refusing them because
+    the word could also be an axis would hide the figure that exists. What stays
+    excluded is a real coordinate - wavelength, time, x, y - which is never a
+    reading of something else. The profile's chosen scan axis is deliberately not
+    excluded: in a two-column method comparison it *is* one of the two readers.
+    """
+    if _axis_rank(a) in (0, 1, 2, 5) or _axis_rank(b) in (0, 1, 2, 5):
+        return False
+    return _same_quantity(a, b)
 
 
 def _distinct_quantity(a: str, b: str) -> bool:
@@ -694,11 +719,8 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         out.append(Recommendation(identifier, title, tier, reason, encodings, rank))
 
     def by_tier(items):
-        # Sixteen, not eight: the widest shipped shape (a complete grid, and a
-        # multi-column spectrum) already asks for twelve candidates, so a cap of
-        # eight was silently deleting offered views rather than trimming noise.
-        # The number is measured against `examples/`, and the tiers still order
-        # what survives.
+        # The bound is measured against `examples/`, not chosen for how a list
+        # should look; the tiers and ranks still order whatever survives.
         return sorted(items, key=lambda r: (TIER_ORDER.index(r.tier), r.rank))[
             :MAX_CANDIDATES
         ]
@@ -955,6 +977,20 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 "配对观测较多，分箱可减轻散点重叠；颜色表示各区域样本数",
                 {"x": x, "y": y},
                 5,
+            )
+        # The marginals rank below the curve view on purpose: where the horizontal
+        # axis carries an acquisition order, a scatter throws that order away, so
+        # the ranked list should not put the lossier picture first.
+        if _valid_count(data, [x, y]) >= 12:
+            add(
+                "scatter_marginals",
+                "散点加边缘直方图",
+                "high",
+                f"{x} 与 {y} 有 {_valid_count(data, [x, y])} 行配对观测，散点看关系、"
+                "两条边缘直方图看各自的分布；直方图只数实测点，分箱数由 hist_bins "
+                "决定，改分箱就会改外观",
+                {"x": x, "y": y},
+                7,
             )
         line_ys = [c for c in responses if _valid_count(data, [x, c]) >= 3]
         keys = [x] + ([group] if group else [])
@@ -1293,6 +1329,31 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                     {"group": group, "value": value},
                     7,
                 )
+    # --- two measurements of one quantity on the same subjects. Row order is the
+    # pairing here, and the engine cannot verify it: nothing in a table says that
+    # row 7 of one column is the same device as row 7 of the other.
+    twin = next(
+        (
+            (a, b)
+            for i, a in enumerate(eligible)
+            for b in eligible[i + 1 :]
+            if _twin_measurements(a, b) and _valid_count(data, [a, b]) >= 10
+        ),
+        None,
+    )
+    if twin:
+        a, b = twin
+        add(
+            "bland_altman",
+            "两法一致性图（Bland-Altman）",
+            "medium",
+            f"{a} 与 {b} 是同类量且有 {_valid_count(data, [a, b])} 行配对观测，可画差值对"
+            "两者均值；一致性界限取差值均值 ± agreement_sd 倍标准差，它要求上下限是常数"
+            "且差值近似正态，这两条只能看点云判断，引擎不给出看似替你查过的统计量。"
+            "逐行配对默认同一行是同一样本，两次测量若各自排序记录，这张图不成立",
+            {"a": a, "b": b},
+            1,
+        )
     if len(eligible) >= 3 and p.n_rows >= 5:
         # Bound pairwise inspection for wide detector/spectral arrays. The GUI
         # still exposes every column for manual selection.
@@ -1305,6 +1366,17 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         ]
         if paired:
             used = [c for c in usable if any(c in pair for pair in paired)]
+            add(
+                "pairs",
+                "成对散点矩阵",
+                "medium",
+                f"{len(used[:5])} 列变化数值两两散点、对角看各自分布，是相关矩阵的"
+                "逐点版本——线性相关系数看不出弯、看不出离群点、也看不出只有几个点"
+                "撑着一条线；每格只用该两列同时有读数的行，格与格的样本量可以不同，"
+                "列数超过 5 就不再展开，再多就只是读不过来",
+                {"columns": used[:5]},
+                1,
+            )
             add(
                 "correlation",
                 "数值变量相关矩阵",
