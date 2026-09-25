@@ -44,6 +44,10 @@ class DataProfile:
 
 TIER_LABELS = {"high": "高", "medium": "中", "low": "低"}
 TIER_ORDER = ("high", "medium", "low")
+# How many candidates one dataset may put forward. Measured, not aesthetic: the
+# widest shipped shape asks for about a dozen, so anything lower starts deleting
+# views the engine had already justified.
+MAX_CANDIDATES = 16
 
 
 @dataclass(frozen=True)
@@ -510,6 +514,14 @@ def _strictly_ordered(values) -> bool:
     return v.size >= 4 and bool(np.all(np.diff(v) > 0) or np.all(np.diff(v) < 0))
 
 
+def _level_text(value) -> str:
+    """A group level as it should read in prose: 25 not 25.0, A not 0.0."""
+    try:
+        return f"{float(value):g}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _decade_span(values) -> float:
     """How many factors of ten a column covers, or 0.0 when it cannot be logged.
 
@@ -682,7 +694,14 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         out.append(Recommendation(identifier, title, tier, reason, encodings, rank))
 
     def by_tier(items):
-        return sorted(items, key=lambda r: (TIER_ORDER.index(r.tier), r.rank))[:8]
+        # Sixteen, not eight: the widest shipped shape (a complete grid, and a
+        # multi-column spectrum) already asks for twelve candidates, so a cap of
+        # eight was silently deleting offered views rather than trimming noise.
+        # The number is measured against `examples/`, and the tiers still order
+        # what survives.
+        return sorted(items, key=lambda r: (TIER_ORDER.index(r.tier), r.rank))[
+            :MAX_CANDIDATES
+        ]
 
     mueller = _mueller_columns(p.numeric_columns)
     if mueller:
@@ -1067,6 +1086,42 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 "这是极差不是标准差，列数少时会高估分散程度",
                 {"x": x, "y": alike[:12]},
                 2,
+            )
+
+        # A family of curves is also a family of *deviations*: both views below
+        # align members on the coordinates they actually share, and neither
+        # invents a point where one member is missing.
+        n_levels = data[group].dropna().nunique() if group else 0
+        grouped_family = bool(group and line_ys and 2 <= n_levels <= 20)
+        if grouped_family or len(alike) >= 2:
+            if grouped_family:
+                family = {"x": x, "y": line_ys[:1], "group": group}
+                members = f"{group} 的 {n_levels} 条曲线"
+                first = data[group].dropna().iloc[0]
+                reference = f"文件里第一条 {group}={_level_text(first)}，用 reference 可换"
+            else:
+                family = {"x": x, "y": alike[:8]}
+                members = f"{alike[0]} 等 {len(alike)} 列"
+                reference = f"第一列 {alike[0]}，用 reference 可换"
+            add(
+                "difference_family",
+                "逐条减参考曲线",
+                "medium",
+                f"{members}落在同一批横坐标上，可全部减去参考条（{reference}）；"
+                "差值取「本条 − 参考」所以上升读成正，参考条按定义是恒零线、"
+                "不代表测到了零，两条曲线在某点任一方缺失则该点不作差而不插值补齐",
+                dict(family),
+                8,
+            )
+            add(
+                "curves_normalized",
+                "曲线归一化重标",
+                "medium",
+                f"{members}可各除以自己的最大偏离后叠在一起比线形与峰位；"
+                "这一步会丢掉绝对强度差，而强度差常常正是结果（荧光淬灭、增益阈值、"
+                "响应度标定），所以归一化图不能代替原始曲线图",
+                dict(family),
+                9,
             )
         if _is_wavelength(x) and (data[x].dropna() > 0).all():
             add(

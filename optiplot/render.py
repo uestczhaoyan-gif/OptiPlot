@@ -36,6 +36,8 @@ FIGURE_TYPES = (
     "spectrum_lines",
     "peak_annotation",
     "stacked_curves",
+    "difference_family",
+    "curves_normalized",
     "broken_spectrum",
     "spectral_difference",
     "spectral_ratio",
@@ -83,6 +85,8 @@ PAINTED_GRID_KINDS = (
 )
 # Which coordinate is held fixed when each line of the grid is standardised.
 NORMALIZATIONS = ("per_y", "per_x")
+# What each member of a curve family is divided by in the re-scaled view.
+NORM_TARGETS = ("peak", "area")
 # Angular response views: one polar frame, one dB frame, and one that pairs the
 # polar frame with the same data on a straight axis.
 POLAR_KINDS = ("polar", "polar_db", "polar_and_cartesian")
@@ -95,6 +99,28 @@ LINE_KINDS = ("spectrum_lines", "log_log", "semi_log", "cumulative_response")
 # filed under a name that promises something else.
 FORCED_LOG = {"log_log": ("x", "y"), "semi_log": ("y",)}
 CUMULATIVE_MODES = ("absolute", "fraction")
+# Which figure option each type actually consumes, beyond the shared ones (title,
+# labels, encodings, log axes). An option that belongs to no drawn type is a dead
+# control: the same failure that got `surface_shade` deleted.
+TYPE_OPTIONS = {
+    "difference_family": ("relative", "reference"),
+    "curves_normalized": ("norm_target", "reference"),
+    "heatmap_normalized": ("normalize",),
+    "cumulative_response": ("cumulative",),
+}
+OPTION_OWNERS = {}
+for _kind, _keys in TYPE_OPTIONS.items():
+    for _key in _keys:
+        OPTION_OWNERS.setdefault(_key, []).append(_kind)
+
+
+class OptionNotApplicable(ValueError):
+    """The figure was asked for something it has no drawing path for.
+
+    A `ValueError` so callers that only handle "this cannot be drawn" keep
+    working; a distinct type so a batch runner can skip that candidate instead of
+    aborting the whole export.
+    """
 
 
 # A difference crosses zero by construction, so a log axis there is meaningless;
@@ -312,6 +338,55 @@ def _linear_overlay(ax, d, xname, yname, palette, style, log_x=False):
     return coef
 
 
+def _level_text(value) -> str:
+    """A group level as it should read on the legend: 25 not 25.0, A not 0.0."""
+    try:
+        return f"{float(value):g}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _family_table(df, e):
+    """One column per curve, indexed by the shared coordinate, NaN where missing.
+
+    Members are aligned on the coordinates they actually share. Nothing is
+    interpolated onto a common grid, because a value conjured at a point the
+    instrument never visited would then carry into every difference below it.
+    """
+    xn = e["x"]
+    if e.get("group"):
+        yname = (e["y"] if isinstance(e["y"], list) else [e["y"]])[0]
+        g = e["group"]
+        rows = (
+            df[[xn, yname, g]]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna(subset=[xn, g])
+        )
+        if rows.empty:
+            raise ValueError(f"没有同时带 {xn} 与 {g} 的有效行。")
+        try:
+            table = rows.pivot(index=xn, columns=g, values=yname)
+        except ValueError:
+            raise ValueError(f"{xn} 与 {g} 的组合有重复观测，无法确定每条曲线的对应点。")
+        # File order, not numeric order: which member is the reference is the
+        # user's call, and `reference` below is how they make it.
+        levels = [level for level in dict.fromkeys(rows[g].to_numpy()) if level in table.columns]
+        table = table[levels]
+        table.columns = [f"{g}={_level_text(level)}" for level in levels]
+    else:
+        ys = e["y"] if isinstance(e["y"], list) else [e["y"]]
+        rows = (
+            df[[xn, *ys]]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+        )
+        if rows[xn].duplicated().any():
+            raise ValueError(f"{xn} 有重复行，多条响应列无法一一对齐。")
+        table = rows.set_index(xn)
+    return table.sort_index()
+
+
 def _cumulative_frame(df, e, mode):
     """Running integral of each response column along the scan axis.
 
@@ -375,6 +450,37 @@ def _cumulative_frame(df, e, mode):
             column[interior] = np.interp(px[interior], x, total)
         out[yname] = column
     return out, bridged
+
+
+def _family_note(kind, reference, values, opts, masked=0):
+    """What the transform did to the points, stated on the figure.
+
+    Both views subtract or rescale, so a reader has to be able to recover which
+    member became the zero and how many points the transform could not reach.
+    """
+    if kind == "difference_family":
+        lines = [
+            f"差值 = 本条 − 参考（参考为 {reference}），"
+            "参考条按定义是恒零线，不代表测到了零"
+        ]
+        if bool(opts.get("relative")):
+            lines.append(
+                f"{masked} 行因参考接近零被屏蔽，不画成尖峰"
+                if masked
+                else "纵轴为 Δ/参考；参考接近零的行会被屏蔽，本次没有这样的行"
+            )
+        unreached = int(values.isna().sum().sum())
+        if unreached:
+            # Counted per difference, not per missing reading: one hole in the
+            # reference takes one point off every other curve at once.
+            lines.append(f"{unreached} 个差值点因参考或本条缺测而未定义（不插值补齐）")
+        return "\n".join(lines)
+    head = (
+        "每条曲线除以自己的最大绝对值：该点 = 1 是定义而不是测量结果"
+        if str(opts.get("norm_target", "peak")) == "peak"
+        else "每条曲线除以自己的积分：面积 = 1 是定义而不是测量结果"
+    )
+    return head + "\n绝对强度差被有意丢弃，这张图不能代替原始曲线图"
 
 
 def _scale_note(kind, style, xname, bridged, mode):
@@ -682,11 +788,16 @@ def render(profile, rec, output=None, options=None, style=None):
         # figure comes back without the curve, and nothing says which of the two
         # was wrong. A type that has no fitting path says so at the door.
         reason = FIT_REFUSAL.get(rec.id)
-        raise ValueError(
+        raise OptionNotApplicable(
             f"{rec.id} 不接受拟合"
             + (f"（{reason}）" if reason else "")
             + f"；可拟合的图型是 {'、'.join(FITTABLE)}"
         )
+    for key, owners in OPTION_OWNERS.items():
+        if key in opts and rec.id not in owners:
+            raise OptionNotApplicable(
+                f"{rec.id} 不消耗 {key}；它属于 {'、'.join(owners)}"
+            )
     with matplotlib.rc_context(style.rc_params()):
         fig = Figure(
             figsize=style.size_inches(), dpi=style.preview_dpi, **style.figure_kwargs()
@@ -1084,6 +1195,91 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                 )
         ax.set(xlabel=xname, ylabel=f"{yname}（按 {group} 逐条上移）")
         _legend(ax, style, title=group)
+    elif kind in ("difference_family", "curves_normalized"):
+        table = _family_table(df, e)
+        xname = e["x"]
+        if table.shape[1] < 2:
+            raise ValueError("这条图型至少需要两条曲线才有可比性。")
+        reference = table.columns[0]
+        if opts.get("reference") is not None:
+            wanted = str(opts["reference"])
+            # Accept either the legend label or the bare level, so `25` and
+            # `theta_deg=25` both select the same curve.
+            named = [
+                column
+                for column in table.columns
+                if column == wanted or column.rsplit("=", 1)[-1] == wanted
+            ]
+            if len(named) != 1:
+                raise ValueError(
+                    f"参考条 {wanted!r} 不存在或不唯一；可选：{'、'.join(table.columns)}"
+                )
+            reference = named[0]
+        # The two family views sit side by side in the candidate list and each has
+        # its own option; render() already refuses the other one's, so `reference`
+        # and the transform choice below can be read without guarding twice.
+        masked = 0
+        if kind == "difference_family":
+            relative = bool(opts.get("relative", False))
+            values = table.sub(table[reference], axis=0)
+            if relative:
+                base = table[reference]
+                live = np.abs(base) > 1e-12 * max(float(np.nanmax(np.abs(base))), 1e-30)
+                masked = int((~live & base.notna()).sum())
+                values = values.div(base.where(live), axis=0)
+            # The reference row is identically zero by construction; drawing it as
+            # a series would put a measured-looking line where there is only a
+            # definition, so it becomes the guide line instead.
+            values = values.drop(columns=[reference])
+            ylabel = "Δ / 参考" if relative else "Δ = 本条 − 参考"
+        else:
+            target = str(opts.get("norm_target", "peak"))
+            if target not in NORM_TARGETS:
+                raise ValueError(
+                    f"norm_target 需是 {'/'.join(NORM_TARGETS)} 之一，当前 {target!r}"
+                )
+            if target == "peak":
+                scale = table.abs().max()
+                ylabel = "各自最大绝对值 = 1"
+            else:
+                def area(column):
+                    live = column.dropna()
+                    return float(
+                        np.trapezoid(
+                            live.to_numpy(dtype=float),
+                            x=live.index.to_numpy(dtype=float),
+                        )
+                    )
+
+                scale = table.apply(area)
+                ylabel = "各自积分 = 1"
+            if not np.all(np.isfinite(scale)) or bool((scale == 0).any()):
+                raise ValueError("有曲线的归一化因子为零或不可计算，无法归一。")
+            values = table.div(scale, axis=1)
+        colours = _group_colours(style, len(values.columns))
+        if not np.isfinite(values.to_numpy(dtype=float)).any():
+            # A blank canvas is the worst possible outcome here: the figure looks
+            # drawn, and the only thing wrong with it is that nothing overlaps.
+            raise ValueError(
+                "这些曲线没有共同的横坐标，逐点变换在每个坐标上都无定义。"
+                "请先确认各条曲线是否在同一批网格上测得。"
+            )
+        for i, name in enumerate(values.columns):
+            ax.plot(
+                values.index.to_numpy(dtype=float),
+                values[name].to_numpy(dtype=float),
+                color=colours[i],
+                drawstyle="steps-mid" if style.step else "default",
+                label=name,
+                **style.series_style(0),
+            )
+        if kind == "difference_family":
+            ax.axhline(0.0, color="#7A94AB", lw=0.9, ls="--", zorder=1)
+        ax.set(xlabel=xname, ylabel=ylabel)
+        note = _family_note(kind, reference, values, opts, masked)
+        if note:
+            ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
+        _legend(ax, style)
     elif kind in ["spectral_difference", "spectral_ratio"]:
         d, xname, a, b = _spectral_pair(df, e)
         if kind == "spectral_difference":

@@ -233,6 +233,78 @@
   "recipe": "累积曲线把峰和谷都抹平成斜率变化，它回答「哪一段贡献了多少」，不回答形状。归一化成占比时按曲线自身的最大偏离归一（不是按末值），否则有正负抵消的列会被除爆；不同列想放在同一张图比较，只有占比模式有意义。"
  },
  {
+  "id": "curves_normalized-01",
+  "label": "归一化之后不能再谈强度",
+  "patterns": [
+   "curves_normalized"
+  ],
+  "data_schema": "temperature_K, wavelength_nm, electroluminescence",
+  "recipe": "每条曲线除以自己的最大值之后，淬灭、增益阈值、响应度标定这类结论就没有依据了——它们正是被除掉的那个量。归一化图只能说明线形与峰位的关系，绝对强度必须回到原始曲线图去讲。"
+ },
+ {
+  "id": "curves_normalized-02",
+  "label": "按峰值还是按面积，问的是两个问题",
+  "patterns": [
+   "curves_normalized"
+  ],
+  "data_schema": "device_id, wavelength_nm, photoluminescence",
+  "recipe": "除以最大绝对值比的是峰的形状、宽度和位置；除以积分比的是能量在波长上的分布，此时最高的峰可以超过 1。两种归一化不能混用同一句话描述，图上的纵轴标签要跟着换。"
+ },
+ {
+  "id": "curves_normalized-03",
+  "label": "归一化会抬起噪声底",
+  "patterns": [
+   "curves_normalized"
+  ],
+  "data_schema": "theta_deg, wavelength_nm, reflectance",
+  "recipe": "除数越小，同样的绝对噪声在图上就越显眼。若某条曲线的最大偏离本来就小，归一化后它的抖动会盖过别的曲线，看起来像「这个角度的样品更不均匀」，实际只是除法放大了噪声。"
+ },
+ {
+  "id": "curves_normalized-04",
+  "label": "除数取不到就整条拒绝",
+  "patterns": [
+   "curves_normalized"
+  ],
+  "data_schema": "channel_id, wavelength_nm, transmittance",
+  "recipe": "最大值为零、或面积为零（正负抵消）的列没有归一化可言。引擎选择报错而不是把这条悄悄跳过，因为一张少了一条曲线的归一化图，看上去和一张完整的图没有区别。"
+ },
+ {
+  "id": "difference_family-01",
+  "label": "参考条是定义不是测量",
+  "patterns": [
+   "difference_family"
+  ],
+  "data_schema": "theta_deg, wavelength_nm, reflectance",
+  "recipe": "被选作参考的那条曲线减完恒等于零，画成一条醒目的实线就会被读成「测到了零响应」。引擎把它换成灰色虚线基准线，并在图上写明参考是谁；要强调参考本身，请另画原始曲线图。"
+ },
+ {
+  "id": "difference_family-02",
+  "label": "先确认同一批坐标，再看少了几个点",
+  "patterns": [
+   "difference_family"
+  ],
+  "data_schema": "theta_deg, wavelength_nm, reflectance",
+  "recipe": "逐点相减只在两条曲线都有读数的坐标上成立。缺测处不插值补齐，图上会给出「多少个差值点未定义」；如果这个数字很大，说明两条曲线本来就不是同一批网格测的，应该先重测而不是先作差。"
+ },
+ {
+  "id": "difference_family-03",
+  "label": "ΔT/T 用相对模式，分母近零处会屏蔽",
+  "patterns": [
+   "difference_family"
+  ],
+  "data_schema": "delay_ps, probe_intensity, pump_state",
+  "recipe": "泵浦-探测的纵轴惯例是 (本条−参考)/参考。参考值接近零的行算出的相对差是除法的产物而不是测量，这些行被屏蔽并计数；报告 ΔT/T 时要把屏蔽了多少行一起写出来。"
+ },
+ {
+  "id": "difference_family-04",
+  "label": "换参考条就是换符号",
+  "patterns": [
+   "difference_family"
+  ],
+  "data_schema": "temperature_K, wavelength_nm, electroluminescence",
+  "recipe": "差值取「本条 − 参考」，所以选哪条当参考决定所有曲线的正负方向。默认是文件里的第一条，而仪器常常从高往低扫；用 reference 明确点名参考水平，别默认第一条就是物理上的初态。"
+ },
+ {
   "id": "dual_axis-01",
   "label": "透反射同框",
   "patterns": [

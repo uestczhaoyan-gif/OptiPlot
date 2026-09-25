@@ -4,8 +4,8 @@ import argparse
 from dataclasses import asdict
 import json
 from pathlib import Path
-from .core import analyze_file, recommend
-from .render import render, FIT_CHOICES
+from .core import analyze_file, recommend, MAX_CANDIDATES
+from .render import render, FIT_CHOICES, OptionNotApplicable
 from .export import export_bundle
 
 
@@ -29,9 +29,26 @@ def main(argv=None):
         choices=FIT_CHOICES,
         help="Overlay a named model and its residual panel; never applied on its own",
     )
+    parser.add_argument(
+        "--set",
+        dest="overrides",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Figure option, value read as JSON when it parses: "
+        "--set reference=25 --set relative=true --set norm_target=area",
+    )
     args = parser.parse_args(argv)
-    if not 1 <= args.top <= 8:
-        parser.error("--top must be between 1 and 8")
+    if not 1 <= args.top <= MAX_CANDIDATES:
+        parser.error(f"--top must be between 1 and {MAX_CANDIDATES}")
+    overrides = {}
+    for item in args.overrides or []:
+        key, separator, raw = item.partition("=")
+        if not separator or not key:
+            parser.error(f"--set needs KEY=VALUE, got {item!r}")
+        try:
+            overrides[key] = json.loads(raw)
+        except json.JSONDecodeError:
+            overrides[key] = raw
     try:
         sheet = int(args.sheet) if args.sheet.isdecimal() else args.sheet
         p = analyze_file(args.data, header=not args.no_header, sheet_name=sheet)
@@ -47,13 +64,22 @@ def main(argv=None):
         (args.out / "recommendations.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        options = {"size": "double", "fit": args.fit}
+        options = {"size": "double", "fit": args.fit, **overrides}
+        drawn, skipped = 0, []
         for r in rs[: args.top]:
-            for ext in ["png", "svg", "pdf"]:
-                render(p, r, args.out / f"{r.id}.{ext}", options=options).clear()
+            try:
+                for ext in ["png", "svg", "pdf"]:
+                    render(p, r, args.out / f"{r.id}.{ext}", options=options).clear()
+                drawn += 1
+            except OptionNotApplicable as exc:
+                # One option set covers a batch of different figures, so a type
+                # that has no path for it is passed over and named, not fatal.
+                skipped.append(f"  {r.id}: {exc}")
         if args.bundle and rs:
             export_bundle(p, rs[0], args.out / "reproducible.zip", options=options)
-        print(f"{len(rs[:args.top])} figures exported to {args.out.resolve()}")
+        print(f"{drawn} figures exported to {args.out.resolve()}")
+        for line in skipped:
+            print(line)
     except (ValueError, OSError) as exc:
         parser.exit(2, f"OptiPlot: {exc}\n")
 

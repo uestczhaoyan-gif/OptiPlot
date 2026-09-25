@@ -50,6 +50,8 @@ AXIS_STYLED = frozenset(
         "spectrum_lines",
         "peak_annotation",
         "stacked_curves",
+        "difference_family",
+        "curves_normalized",
         "broken_spectrum",
         "spectral_difference",
         "spectral_ratio",
@@ -89,6 +91,9 @@ DATA_KEYS = frozenset(
         "xlog",
         "ylog",
         "cumulative",
+        "relative",
+        "norm_target",
+        "reference",
     }
 )
 # Multipliers, not absolute points: raising the base size should move every

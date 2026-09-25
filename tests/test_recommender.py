@@ -9,7 +9,7 @@ import pandas as pd
 from scipy.io import savemat
 
 from optiplot import analyze_dataframe, analyze_file, recommend
-from optiplot.core import TIER_LABELS, TIER_ORDER
+from optiplot.core import MAX_CANDIDATES, TIER_LABELS, TIER_ORDER
 
 
 class RecommenderTestCase(unittest.TestCase):
@@ -207,7 +207,7 @@ class RecommenderTestCase(unittest.TestCase):
             }
         )
         suggestions = recommend(p)
-        self.assertLessEqual(len(suggestions), 8)
+        self.assertLessEqual(len(suggestions), MAX_CANDIDATES)
         keys = [(TIER_ORDER.index(r.tier), r.rank) for r in suggestions]
         self.assertEqual(keys, sorted(keys), "recommendations must order by tier, then rank")
         for rec in suggestions:
@@ -379,6 +379,22 @@ class FileInputTestCase(unittest.TestCase):
                 self.assertIn(rec.tier, TIER_ORDER)
                 self.assertEqual(rec.tier_label, TIER_LABELS[rec.tier])
                 self.assertFalse(hasattr(rec, "score"), f"{rec.id} still exposes a score")
+
+
+    def test_no_shipped_example_has_a_candidate_cut_off(self):
+        """The product promise is "here is everything this data can be drawn as",
+        so the cap has to stay above what any real shape asks for. A new figure
+        type that pushes an example to the limit fails here rather than quietly
+        replacing one view with another."""
+        root = Path(__file__).resolve().parents[1]
+        for path in sorted(root.joinpath("examples").glob("*.csv")):
+            offered = recommend(analyze_file(path))
+            self.assertLess(
+                len(offered),
+                MAX_CANDIDATES,
+                f"{path.name} offers {len(offered)} candidates; raise MAX_CANDIDATES "
+                "or stop offering one of them",
+            )
 
 
 if __name__ == "__main__":

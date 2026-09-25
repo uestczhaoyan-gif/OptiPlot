@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 from matplotlib.colors import to_hex
 from optiplot import analyze_file, analyze_dataframe, recommend, Recommendation
-from optiplot.render import render, FIGURE_TYPES
+from optiplot.render import render, FIGURE_TYPES, TYPE_OPTIONS
 from optiplot.style import Style
 from optiplot.export import export_bundle
 
@@ -1292,3 +1292,195 @@ def test_linear_fit_on_a_curve_is_not_a_dead_control():
     assert len(axes.lines) == 2, "the OLS line is missing"
     assert axes.lines[-1].get_label().startswith("OLS")
     assert len(axes.figure.axes) == 1, "OLS keeps the single-panel convention"
+
+
+# ── curve families: deviations from a reference, and re-scaling ─────
+FAMILY_REC = {
+    "difference_family": Recommendation(
+        "difference_family", "逐条减参考", "medium", "",
+        {"x": "wavelength_nm", "y": ["reflectance"], "group": "theta_deg"},
+    ),
+    "curves_normalized": Recommendation(
+        "curves_normalized", "曲线归一化重标", "medium", "",
+        {"x": "wavelength_nm", "y": ["reflectance"], "group": "theta_deg"},
+    ),
+}
+
+
+def angle_family():
+    return analyze_file(ROOT / "examples" / "sample_angle_resolved.csv")
+
+
+def family_frame(levels=(0.0, 10.0), xs=(1.0, 2.0, 3.0, 4.0), holes=()):
+    rows = [
+        {
+            "theta_deg": level,
+            "wavelength_nm": x,
+            "reflectance": np.nan if (level, x) in holes else level + j,
+        }
+        for level in levels
+        for j, x in enumerate(xs)
+    ]
+    return analyze_dataframe(pd.DataFrame(rows))
+
+
+def draw_family(kind, profile, **opts):
+    return render(profile, FAMILY_REC[kind], options=opts).axes[0]
+
+
+def line_of(axes, label):
+    return next(line for line in axes.lines if line.get_label() == label)
+
+
+def test_the_family_views_are_offered_for_a_parameter_sweep():
+    offered = {r.id: r for r in recommend(angle_family())}
+    for kind in ("difference_family", "curves_normalized"):
+        assert kind in offered, f"{kind} is not offered on a grouped sweep"
+        assert offered[kind].tier == "medium"
+        assert "定义" in offered[kind].reason or "丢掉" in offered[kind].reason
+
+
+def test_the_reference_curve_becomes_the_zero_line_and_not_a_series():
+    """A reference subtracted from itself is a definition, and a bold line at
+    zero would read as a measurement of nothing."""
+    axes = render(angle_family(), pick(angle_family(), "difference_family")).axes[0]
+    labels = [line.get_label() for line in axes.lines]
+    assert "theta_deg=0" not in labels, "the reference must not be drawn as data"
+    assert any(line.get_linestyle() == "--" for line in axes.lines), "no zero guide"
+    assert "theta_deg=0" in axes.get_title(loc="left")
+
+
+def test_the_difference_is_this_curve_minus_the_reference():
+    axes = draw_family("difference_family", family_frame())
+    assert np.asarray(line_of(axes, "theta_deg=10").get_ydata(), float) == pytest.approx(
+        [10.0, 10.0, 10.0, 10.0]
+    )
+    assert axes.get_ylabel() == "Δ = 本条 − 参考"
+
+
+def test_a_hole_in_the_reference_takes_that_point_off_every_other_curve():
+    axes = draw_family(
+        "difference_family",
+        family_frame(levels=(0.0, 10.0, 20.0), holes=((0.0, 2.0),)),
+    )
+    for label in ("theta_deg=10", "theta_deg=20"):
+        y = np.asarray(line_of(axes, label).get_ydata(), float)
+        assert np.isnan(y[1]), f"{label} invented a difference where the reference was missing"
+    assert "2 个差值点因参考或本条缺测而未定义" in axes.get_title(loc="left")
+
+
+def test_the_reference_can_be_named_and_an_unknown_one_is_refused():
+    p = angle_family()
+    rec = pick(p, "difference_family")
+    axes = render(p, rec, options={"reference": "30"}).axes[0]
+    assert "theta_deg=30" in axes.get_title(loc="left")
+    assert "theta_deg=30" not in [line.get_label() for line in axes.lines]
+    assert "theta_deg=0" in [line.get_label() for line in axes.lines]
+    with pytest.raises(ValueError, match="参考条"):
+        render(p, rec, options={"reference": "999"})
+
+
+def test_relative_difference_divides_by_the_reference_and_counts_the_shielded_rows():
+    """The reference here passes through zero, and a ΔT/T computed there is an
+    artefact of the division rather than a measurement."""
+    axes = draw_family("difference_family", family_frame(), relative=True)
+    y = np.asarray(line_of(axes, "theta_deg=10").get_ydata(), float)
+    assert np.isnan(y[0]), "dividing by a zero reference must not produce a spike"
+    assert y[1:] == pytest.approx([10.0, 5.0, 10.0 / 3.0])
+    assert axes.get_ylabel() == "Δ / 参考"
+    assert "1 行因参考接近零被屏蔽" in axes.get_title(loc="left")
+
+
+def test_curves_that_share_no_coordinate_are_refused_rather_than_drawn_blank():
+    apart = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "theta_deg": [0.0] * 3 + [10.0] * 3,
+                "wavelength_nm": [1.0, 2.0, 3.0, 5.0, 6.0, 7.0],
+                "reflectance": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="没有共同的横坐标"):
+        draw_family("difference_family", apart)
+
+
+def test_normalised_curves_all_reach_one_and_amplitude_is_gone():
+    axes = render(angle_family(), pick(angle_family(), "curves_normalized")).axes[0]
+    tops = [np.nanmax(np.abs(np.asarray(line.get_ydata(), float))) for line in axes.lines]
+    assert len(tops) >= 10
+    assert all(top == pytest.approx(1.0) for top in tops), "a curve escaped its own scale"
+    assert "不能代替原始曲线图" in axes.get_title(loc="left")
+
+
+def test_area_normalisation_gives_every_curve_unit_integral():
+    axes = draw_family("curves_normalized", family_frame(levels=(1.0, 3.0)), norm_target="area")
+    for line in axes.lines:
+        x = np.asarray(line.get_xdata(), float)
+        y = np.asarray(line.get_ydata(), float)
+        assert np.trapezoid(y, x=x) == pytest.approx(1.0, rel=1e-9)
+    assert axes.get_ylabel() == "各自积分 = 1"
+
+
+def test_a_curve_with_nothing_to_divide_by_is_refused_not_skipped():
+    """One dropped curve in a normalised overlay is invisible: the remaining
+    lines still each reach 1, so nothing looks missing."""
+    flat = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "wavelength_nm": [1.0, 2.0, 3.0, 4.0],
+                "reflectance_a": [1.0, 2.0, 3.0, 4.0],
+                "reflectance_b": [0.0, 0.0, 0.0, 0.0],
+            }
+        )
+    )
+    rec = Recommendation(
+        "curves_normalized", "归一化", "medium", "",
+        {"x": "wavelength_nm", "y": ["reflectance_a", "reflectance_b"]},
+    )
+    with pytest.raises(ValueError, match="归一化因子"):
+        render(flat, rec)
+
+
+def test_the_two_family_views_refuse_each_others_option():
+    """Both sit next to each other in the candidate list, and an option that
+    belongs to the other one would otherwise be accepted and do nothing."""
+    p = angle_family()
+    with pytest.raises(ValueError, match="norm_target"):
+        render(p, pick(p, "difference_family"), options={"norm_target": "area"})
+    with pytest.raises(ValueError, match="relative"):
+        render(p, pick(p, "curves_normalized"), options={"relative": True})
+
+
+def test_no_figure_option_is_accepted_by_a_type_that_ignores_it():
+    """The family pair made the rule explicit, but `normalize` on a plain heatmap
+    and `cumulative` on a curve had the same silent no-effect."""
+    from optiplot.render import OPTION_OWNERS, OptionNotApplicable
+
+    p = analyze_file(ROOT / "examples" / "sample_beam_map.csv")
+    with pytest.raises(OptionNotApplicable, match="normalize"):
+        render(p, pick(p, "heatmap"), options={"normalize": "per_x"})
+    with pytest.raises(ValueError, match="cumulative"):
+        render(broadband(), pick(broadband(), "spectrum_lines"), options={"cumulative": "fraction"})
+    # every owned option is consumed by the type that owns it
+    assert OPTION_OWNERS["normalize"] == ["heatmap_normalized"]
+    assert set(OPTION_OWNERS) == {
+        key for keys in TYPE_OPTIONS.values() for key in keys
+    }
+
+
+def test_the_command_line_reaches_the_renderer_and_names_what_it_skipped(tmp_path):
+    from optiplot.cli import main
+
+    out = tmp_path / "cli"
+    code = main(
+        [
+            str(ROOT / "examples" / "sample_angle_resolved.csv"),
+            "--out", str(out),
+            "--top", "16",
+            "--set", "norm_target=area",
+        ]
+    )
+    assert code is None
+    assert (out / "curves_normalized.png").stat().st_size > 1000
+    assert not (out / "difference_family.png").exists(), "it should have been skipped"
