@@ -70,6 +70,9 @@ AXIS_STYLED = frozenset(
         "pairs",
         "errorbar",
         "distribution",
+        "ecdf",
+        "beeswarm",
+        "group_bar",
         "box",
     }
 )

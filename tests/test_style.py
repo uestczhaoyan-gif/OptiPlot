@@ -68,13 +68,20 @@ def profile():
     )
 
 
+def curve_choice(p=None):
+    """The curve view, pinned by id.
+
+    Several styling tests used to take `recommend(...)[0]`, which silently changed
+    which figure they drew every time the ranking moved - a knob looked broken when
+    the test had simply started rendering a different type.
+    """
+    p = profile() if p is None else p
+    return next(r for r in recommend(p) if r.id == "spectrum_lines")
+
+
 def drawn(options=None, style=None):
     p = profile()
-    # Pinned to the curve view rather than `recommend(p)[0]`: these tests are about
-    # series styling, and which candidate ranks first changes as figure types are
-    # added.
-    rec = next(r for r in recommend(p) if r.id == "spectrum_lines")
-    fig = render(p, rec, options=options, style=style)
+    fig = render(p, curve_choice(p), options=options, style=style)
     return fig, fig.axes[0]
 
 
@@ -152,7 +159,7 @@ def test_family_knob_changes_latin_glyphs_when_cjk_is_off():
 
     def digest(style):
         p = profile()
-        fig = render(p, recommend(p)[0], style=style)
+        fig = render(p, curve_choice(p), style=style)
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=100)
         fig.clear()
@@ -285,7 +292,7 @@ def test_axis_knobs_change_the_rendered_pixels():
     import hashlib
 
     def digest(**kw):
-        fig = render(profile(), recommend(profile())[0], style=Style(**kw))
+        fig = render(profile(), curve_choice(), style=Style(**kw))
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
         fig.clear()
@@ -661,7 +668,7 @@ def test_legend_and_palette_knobs_change_the_rendered_pixels():
     import hashlib
 
     def digest(**kw):
-        fig = render(profile(), recommend(profile())[0], style=Style(**kw))
+        fig = render(profile(), curve_choice(), style=Style(**kw))
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
         fig.clear()
@@ -810,7 +817,7 @@ def test_every_offered_marker_and_fillstyle_survives_a_real_draw():
     a bad fillstyle only surfaces when the marker is rendered, so constructing
     the figure and checking the attribute would have let it through."""
     p = profile()
-    rec = recommend(p)[0]
+    rec = curve_choice(p)
     for marker in MARKERS:
         if marker == "none":
             continue
@@ -864,7 +871,7 @@ def test_series_knobs_change_the_rendered_pixels():
     import hashlib
 
     def digest(**kw):
-        fig = render(profile(), recommend(profile())[0], style=Style(**kw))
+        fig = render(profile(), curve_choice(), style=Style(**kw))
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
         fig.clear()
@@ -891,7 +898,7 @@ def export(tmp_path, **style_values):
     """Go through the real path: render(output=...) is what applies
     savefig_kwargs, so calling fig.savefig by hand would test nothing."""
     p = profile()
-    rec = recommend(p)[0]
+    rec = curve_choice(p)
     suffix = "svg" if style_values.pop("as_svg", False) else "png"
     target = tmp_path / f"figure.{suffix}"
     render(p, rec, target, style=Style(**style_values))
@@ -911,7 +918,7 @@ def test_preview_dpi_does_not_leak_into_the_export(tmp_path):
     from PIL import Image
 
     p = profile()
-    assert render(p, recommend(p)[0], style=Style(preview_dpi=72, dpi=600)).dpi == 72
+    assert render(p, curve_choice(p), style=Style(preview_dpi=72, dpi=600)).dpi == 72
     file_dpi = Image.open(io.BytesIO(export(tmp_path, preview_dpi=72, dpi=600))).info["dpi"]
     assert round(file_dpi[0]) == 600
 
@@ -1018,7 +1025,7 @@ def test_bundle_carries_the_full_style_and_replays_it(tmp_path):
     """A replay must not depend on which defaults the installed version ships,
     so the recipe records every resolved field, not just what was passed in."""
     p = analyze_file(ROOT / "examples" / "sample_spectrum.csv")
-    rec = recommend(p)[0]
+    rec = curve_choice(p)
     target = tmp_path / "bundle.zip"
     export_bundle(p, rec, target, options={"size": "single", "line_width": 3.0})
     with zipfile.ZipFile(target) as z:
@@ -1059,7 +1066,7 @@ def test_aspect_lock_conflicts_with_two_explicit_dimensions():
 
 
 def test_custom_size_reaches_the_figure():
-    fig = render(profile(), recommend(profile())[0], style=Style(width_mm=127.0, height_mm=76.2))
+    fig = render(profile(), curve_choice(), style=Style(width_mm=127.0, height_mm=76.2))
     assert fig.get_size_inches()[0] == pytest.approx(5.0)
     assert fig.get_size_inches()[1] == pytest.approx(3.0)
 
@@ -1081,10 +1088,10 @@ def test_margins_conflict_with_tight_bbox():
 
 def test_margins_move_the_axes_box():
     tight = render(
-        profile(), recommend(profile())[0], style=Style(layout="none", margin_left=0.05)
+        profile(), curve_choice(), style=Style(layout="none", margin_left=0.05)
     ).axes[0].get_position().x0
     wide = render(
-        profile(), recommend(profile())[0], style=Style(layout="none", margin_left=0.45)
+        profile(), curve_choice(), style=Style(layout="none", margin_left=0.45)
     ).axes[0].get_position().x0
     assert wide > tight + 0.3
 
@@ -1128,14 +1135,14 @@ def test_tiff_is_exportable(tmp_path):
     from PIL import Image
 
     target = tmp_path / "figure.tiff"
-    render(profile(), recommend(profile())[0], target, style=Style(dpi=120))
+    render(profile(), curve_choice(), target, style=Style(dpi=120))
     assert target.exists()
     assert Image.open(target).size[0] > 300
 
 
 def test_unknown_extension_names_what_is_available(tmp_path):
     with pytest.raises(ValueError, match="TIFF"):
-        render(profile(), recommend(profile())[0], tmp_path / "figure.eps")
+        render(profile(), curve_choice(), tmp_path / "figure.eps")
 
 
 def test_every_offered_format_actually_writes_a_file(tmp_path):
@@ -1145,7 +1152,7 @@ def test_every_offered_format_actually_writes_a_file(tmp_path):
 
     for suffix in EXPORT_FORMATS:
         target = tmp_path / f"figure{suffix}"
-        render(profile(), recommend(profile())[0], target, style=Style(dpi=72))
+        render(profile(), curve_choice(), target, style=Style(dpi=72))
         assert target.exists() and target.stat().st_size > 500, f"{suffix} wrote nothing"
 
 

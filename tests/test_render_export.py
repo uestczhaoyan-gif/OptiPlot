@@ -1640,6 +1640,143 @@ def test_a_grid_type_puts_its_title_on_the_figure_not_on_one_cell():
     ), "the caption landed on a single panel"
 
 
+# ── groups, quantiles and the bar convention ───────────────────────
+def grouped(n_per=6, groups=4, seed=2, singles=0):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for g in range(groups):
+        count = 1 if g < singles else n_per
+        rows += [
+            {"batch": f"B{g}", "efficiency_percent": float(v)}
+            for v in rng.normal(20.0 + g, 1.5, count)
+        ]
+    return analyze_dataframe(pd.DataFrame(rows))
+
+
+def draw_grouped(kind, profile, **opts):
+    rec = Recommendation(kind, kind, "high", "", {"group": "batch", "value": "efficiency_percent"})
+    return render(profile, rec, options=opts).axes[0]
+
+
+def test_the_ecdf_steps_only_where_the_data_actually_is():
+    p = grouped()
+    rec = Recommendation("ecdf", "ecdf", "high", "", {"value": "efficiency_percent"})
+    ax = render(p, rec).axes[0]
+    step = ax.lines[0]
+    x = np.asarray(step.get_xdata(), dtype=float)
+    y = np.asarray(step.get_ydata(), dtype=float)
+    values = np.sort(p.data.efficiency_percent.to_numpy(dtype=float))
+    assert np.array_equal(np.unique(x), values), "the steps must land on observed values"
+    assert y[-1] == 1.0 and np.all(np.diff(y) >= 0)
+    heights = np.unique(np.round(np.diff(np.concatenate(([0.0], np.ravel(y)))), 10))
+    assert heights == pytest.approx([round(1.0 / values.size, 10)]), "every step is one reading"
+    assert "不需要选分箱" in ax.get_title(loc="left")
+
+
+def test_the_grouped_ecdf_names_unequal_sample_sizes_as_the_reason():
+    p = grouped(n_per=6, groups=3, singles=1)
+    axes = draw_grouped("ecdf", p)
+    assert len(axes.lines) == 3
+    assert "台阶粗" in axes.get_title(loc="left")
+    heights = {
+        round(float(np.unique(np.diff(np.concatenate(([0.0], np.asarray(l.get_ydata(), float)))))[0]), 4)
+        for l in axes.lines
+    }
+    assert round(1.0 / 6, 4) in heights and round(1.0, 4) in heights, heights
+
+
+def test_identical_readings_line_up_instead_of_hiding_behind_each_other():
+    flat = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "batch": ["B1"] * 5 + ["B2"] * 3,
+                "efficiency_percent": [12.0] * 5 + [9.0, 9.5, 10.0],
+            }
+        )
+    )
+    axes = draw_grouped("beeswarm", flat)
+    first, second = axes.collections
+    xs = np.asarray(first.get_offsets(), dtype=float)
+    assert len(set(np.round(xs[:, 0], 6))) == 5, "the five identical readings overlap"
+    assert np.allclose(xs[:, 1], 12.0)
+    assert xs[:, 0].mean() == pytest.approx(1.0), "the stack is centred on its group"
+    assert "不携带任何信息" in axes.get_title(loc="left")
+
+
+def test_the_packing_does_not_depend_on_the_row_order():
+    p = grouped()
+    forward = np.sort(np.asarray(draw_grouped("beeswarm", p).collections[0].get_offsets()), axis=0)
+    shuffled = p.data.sample(frac=1.0, random_state=7).reset_index(drop=True)
+    again = np.sort(
+        np.asarray(draw_grouped("beeswarm", analyze_dataframe(shuffled)).collections[0].get_offsets()),
+        axis=0,
+    )
+    assert np.allclose(forward, again), "jitter would have made this differ"
+
+
+def test_bars_are_measured_from_zero_even_when_the_values_are_large():
+    """A bar compares by height, and a truncated baseline turns a 3 % difference
+    into a visual factor of two."""
+    tall = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "batch": ["B1"] * 6 + ["B2"] * 6,
+                "efficiency_percent": [1000.0, 1002.0, 999.0, 1001.0, 1000.5, 1000.1,
+                                       1030.0, 1032.0, 1029.0, 1031.0, 1030.5, 1030.1],
+            }
+        )
+    )
+    axes = draw_grouped("group_bar", tall)
+    assert axes.get_ylim()[0] == 0.0
+
+
+def test_the_error_bar_choice_changes_the_length_by_the_root_n():
+    p = grouped(n_per=9)
+    def tallest(profile, **opts):
+        bars = draw_grouped("group_bar", profile, **opts).containers[0][2][0]
+        return max(float(end[1] - start[1]) for start, end in bars.get_segments())
+
+    ratio = tallest(p, error_type="sd") / tallest(p, error_type="sem")
+    assert ratio == pytest.approx(3.0, rel=1e-6), "SEM must be SD/sqrt(n)"
+    assert "SD（数据的分散" in draw_grouped("group_bar", p).get_legend_handles_labels()[1][0]
+    assert "SEM" in draw_grouped("group_bar", p, error_type="sem").get_legend_handles_labels()[1][0]
+
+
+def test_a_single_reading_group_says_its_error_bar_is_not_an_error_bar():
+    p = grouped(n_per=6, groups=3, singles=1)
+    text = draw_grouped("group_bar", p).get_title(loc="left")
+    assert "1 个读数" in text
+
+
+def test_an_unknown_error_type_is_refused_rather_than_silently_defaulting():
+    with pytest.raises(ValueError, match="error_type"):
+        draw_grouped("group_bar", grouped(), error_type="ci")
+
+
+def test_a_truncated_group_list_says_who_is_missing():
+    """Twenty bars read as 'these are the batches' when the file held twenty-eight;
+    the caption the reader needs is the one that says eight were left out."""
+    many = analyze_dataframe(
+        pd.DataFrame(
+            [
+                {"batch": f"B{i}", "efficiency_percent": float(v)}
+                for i in range(28)
+                for v in range(4)
+            ]
+        )
+    )
+    for kind in ("box", "beeswarm", "group_bar"):
+        text = draw_grouped(kind, many).get_title(loc="left")
+        assert "另有 8 个分组取值未画" in text, f"{kind} hid the cut"
+
+
+def test_error_type_only_reaches_the_types_that_read_it():
+    p = grouped()
+    rec = next(r for r in recommend(p) if r.id == "box")
+    with pytest.raises(ValueError, match="error_type"):
+        render(p, rec, options={"error_type": "sem"})
+
+
 def test_no_figure_option_is_accepted_by_a_type_that_ignores_it():
     """The family pair made the rule explicit, but `normalize` on a plain heatmap
     and `cumulative` on a curve had the same silent no-effect."""

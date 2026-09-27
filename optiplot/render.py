@@ -69,6 +69,9 @@ FIGURE_TYPES = (
     "mueller_matrix",
     "poincare_sphere",
     "distribution",
+    "ecdf",
+    "beeswarm",
+    "group_bar",
     "box",
     "correlation",
     "flow",
@@ -113,6 +116,8 @@ TYPE_OPTIONS = {
     "curves_normalized": ("norm_target", "reference"),
     "heatmap_normalized": ("normalize",),
     "cumulative_response": ("cumulative",),
+    "errorbar": ("error_type",),
+    "group_bar": ("error_type",),
 }
 OPTION_OWNERS = {}
 for _kind, _keys in TYPE_OPTIONS.items():
@@ -355,6 +360,94 @@ def _linear_overlay(ax, d, xname, yname, palette, style, log_x=False):
         label=f"OLS: y={coef[0]:.3g}x{coef[1]:+.3g}; R²={r2:.3f}",
     )
     return coef
+
+
+def _group_sizes_text(labels, arrays, limit=6):
+    """Per-group counts, abbreviated: a note that lists twenty groups is not a note."""
+    shown = "、".join(f"{label} {len(a)}" for label, a in zip(labels[:limit], arrays[:limit]))
+    if len(labels) > limit:
+        shown += f"…（共 {len(labels)} 组）"
+    return shown
+
+
+def _group_limit_note(dropped, limit=20):
+    """A truncated group list has to say so on the figure.
+
+    Five bars read as "these are the groups"; if the file held forty, the caption
+    the reader needs is the one that says only the first five were drawn.
+    """
+    if not dropped:
+        return ""
+    return f"\n只画了前 {limit} 组，另有 {dropped} 个分组取值未画——组标签不是全部"
+
+
+def _grouped_values(df, group, value, limit=20):
+    """Finite values per group level, in the order the levels appear in the file.
+
+    Levels with no reading are dropped rather than drawn as an empty slot, which
+    would claim the group was measured and came back blank.
+    """
+    seen = 0
+    labels, arrays = [], []
+    # Counted up front: the loop below stops at the limit, so it can never see the
+    # groups it did not draw.
+    total = int(df[group].dropna().nunique())
+    for name, subset in df.dropna(subset=[group]).groupby(group, sort=False, observed=True):
+        seen += 1
+        a = (
+            pd.to_numeric(subset[value], errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .to_numpy(dtype=float)
+        )
+        if a.size:
+            labels.append(str(name))
+            arrays.append(a)
+        if len(labels) >= limit:
+            break
+    if not arrays:
+        raise ValueError("没有可绘制的分组数值。")
+    return labels, arrays, max(total - len(labels), 0)
+
+
+def _ecdf_points(values):
+    """Sorted values and their empirical cumulative fractions.
+
+    The step is drawn, not interpolated: between two observations there is no
+    information, and a smooth curve through them would be an assumption about the
+    distribution rather than a description of the sample.
+    """
+    v = np.sort(np.asarray(values, dtype=float))
+    v = v[np.isfinite(v)]
+    if v.size == 0:
+        raise ValueError("这一列没有有限的数值观测。")
+    return v, np.arange(1, v.size + 1) / v.size
+
+
+def _beeswarm_offsets(values, radius: float = 0.12):
+    """Spread readings that land at nearly the same height, symmetrically.
+
+    Random jitter puts two identical readings at different horizontal positions
+    and calls the picture honest; here the horizontal axis means nothing either,
+    but equal values line up in a stack the eye can count. Points are banded by
+    height, so the packing is deterministic and does not depend on row order.
+    """
+    v = np.asarray(values, dtype=float)
+    low, high = float(v.min()), float(v.max())
+    span = (high - low) or 1.0
+    bands = np.rint((v - low) / span / radius).astype(int)
+    sizes = {}
+    for band in bands:
+        sizes[band] = sizes.get(band, 0) + 1
+    offsets = np.zeros(v.size)
+    seen = {}
+    for i in np.argsort(v, kind="mergesort"):
+        band = int(bands[i])
+        slot = seen.get(band, 0)
+        seen[band] = slot + 1
+        total = sizes[band]
+        offsets[i] = (slot - (total - 1) / 2.0) * 2.0 * radius
+    return np.clip(offsets, -0.45, 0.45)
 
 
 def _level_text(value) -> str:
@@ -2017,21 +2110,7 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
         value = e.get("value", numeric[0] if numeric else None)
         if kind == "box" and e.get("group"):
             group = e["group"]
-            groups = list(df.dropna(subset=[group]).groupby(group, sort=False, observed=True))[:20]
-            arrays = []
-            labels = []
-            for name, g in groups:
-                a = (
-                    pd.to_numeric(g[value], errors="coerce")
-                    .replace([np.inf, -np.inf], np.nan)
-                    .dropna()
-                    .to_numpy()
-                )
-                if len(a):
-                    arrays.append(a)
-                    labels.append(str(name))
-            if not arrays:
-                raise ValueError("没有可绘制的分组数值。")
+            labels, arrays, dropped = _grouped_values(df, group, value)
             bp = ax.boxplot(arrays, patch_artist=True, showfliers=False)
             for box in bp["boxes"]:
                 box.set(facecolor="#CAE5F1", edgecolor=palette[0 % len(palette)])
@@ -2046,6 +2125,13 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                 )
             ax.set_xticks(range(1, len(labels) + 1), labels, rotation=20 if len(labels) > 5 else 0)
             ax.set(xlabel=group, ylabel=value)
+            if dropped:
+                ax.set_title(
+                    _group_limit_note(dropped).lstrip("\n"),
+                    loc="left",
+                    pad=8,
+                    fontsize=style.resolved_font_size() * 0.85,
+                )
         else:
             a = _finite(df, [value])[value]
             bins = _bin_count(len(a), style)
@@ -2065,6 +2151,112 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
                 pad=8,
                 fontsize=style.resolved_font_size() * 0.85,
             )
+    elif kind == "ecdf":
+        value = e["value"]
+        group = e.get("group")
+        curves = []
+        if group:
+            labels, arrays, dropped = _grouped_values(df, group, value)
+            colours = _group_colours(style, len(labels))
+            curves = list(zip(labels, arrays, colours))
+        else:
+            a = pd.to_numeric(df[value], errors="coerce").replace([np.inf, -np.inf], np.nan)
+            curves = [(value, a.dropna().to_numpy(dtype=float), palette[0 % len(palette)])]
+        for name, a, colour in curves:
+            x, y = _ecdf_points(a)
+            ax.step(x, y, where="post", color=colour, label=name,
+                    linewidth=max(0.8, float(style.line_width)))
+        ax.set_ylim(0.0, 1.02)
+        ax.set(xlabel=value, ylabel="累积比例")
+        smallest = min(len(a) for _, a, _ in curves)
+        note = (
+            "阶梯是经验分布原样：两级之间没有观测，就不画成连续\n"
+            + (
+                f"各组 n 不同（最小 {smallest}），一个台阶的高度就是 1/n，"
+                "样本少的组台阶粗，那不是分布更集中"
+                if group
+                else f"一个台阶的高度是 1/n（n={smallest}），分位数在这条线上直接读，不需要选分箱"
+            )
+            + _group_limit_note(dropped if group else 0)
+        )
+        ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
+        if group:
+            _legend(ax, style, title=group)
+    elif kind == "beeswarm":
+        group, value = e["group"], e["value"]
+        labels, arrays, dropped = _grouped_values(df, group, value)
+        colours = _group_colours(style, len(labels))
+        for i, (a, colour) in enumerate(zip(arrays, colours)):
+            offset = _beeswarm_offsets(a)
+            ax.scatter(
+                i + 1 + offset,
+                a,
+                s=style.scatter_size * 0.75,
+                alpha=style.scatter_alpha,
+                color=colour,
+                edgecolors=colour,
+                linewidths=style.marker_edge_width * 0.5,
+                zorder=style.series_zorder,
+            )
+        ax.set_xticks(range(1, len(labels) + 1), labels,
+                      rotation=20 if len(labels) > 5 else 0)
+        ax.set(xlabel=group, ylabel=value)
+        note = (
+            "横向只用来把几乎同值的读数排开，不携带任何信息\n"
+            f"每组 n：{_group_sizes_text(labels, arrays)}\n"
+            "样本量小的时候这里不画分位数，因为那是在猜"
+            + _group_limit_note(dropped)
+        )
+        ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
+    elif kind == "group_bar":
+        group, value = e["group"], e["value"]
+        labels, arrays, dropped = _grouped_values(df, group, value)
+        choice = str(opts.get("error_type", e.get("error_type", "sd")))
+        means = np.array([a.mean() for a in arrays])
+        spreads = np.array([a.std(ddof=1) if a.size > 1 else np.nan for a in arrays])
+        counts = np.array([a.size for a in arrays])
+        if choice == "sem":
+            errors = spreads / np.sqrt(counts)
+            caption = "SEM（均值的标准误 = SD/√n）"
+        elif choice == "sd":
+            errors = spreads
+            caption = "SD（数据的分散，不是均值的精度）"
+        else:
+            raise ValueError(f"error_type 需是 sd 或 sem，当前 {choice!r}")
+        ax.bar(
+            range(1, len(labels) + 1),
+            means,
+            yerr=np.nan_to_num(errors, nan=0.0),
+            capstyle="projecting",
+            error_kw={"elinewidth": max(0.7, float(style.line_width) * 0.9), "capsize": 3.5},
+            color="#CAE5F1",
+            edgecolor=palette[0 % len(palette)],
+            linewidth=style.spine_width,
+            label=f"均值 ± {caption}",
+            zorder=style.series_zorder,
+        )
+        # A bar compares by height, and height is only comparable from a shared
+        # zero: an auto-scaled axis that starts near the shortest bar turns a 3 %
+        # difference into a visual factor of two.
+        ax.axhline(0.0, color=style.spine_color, linewidth=float(style.spine_width))
+        ax.set_ylim(bottom=0.0 if means.min() >= 0 else min(0.0, means.min() - np.nanmax(errors)))
+        ax.set_xticks(range(1, len(labels) + 1), labels,
+                      rotation=20 if len(labels) > 5 else 0)
+        ax.set(xlabel=group, ylabel=f"均值 {value}")
+        note = "\n".join(
+            [
+                f"误差棒是 {caption}；换成语义完全不同的 SEM 会短 √n 倍",
+                "柱状从 0 起画，柱高比的是绝对量级；分布形态（双峰、离群、组间样本量差）已被抹平",
+                (
+                    f"每组 n：{_group_sizes_text(labels, [np.full(c, 0.0) for c in counts])}"
+                    if np.all(counts > 1)
+                    else "有组只有 1 个读数，SD 无定义，那条误差棒被画成 0——那一柱只是一个个例"
+                ),
+            ]
+            + ([_group_limit_note(dropped).lstrip("\n")] if dropped else [])
+        )
+        ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
+        _legend(ax, style)
     elif kind == "correlation":
         cols = e.get("columns", numeric)[:12]
         corr = df[cols].corr()

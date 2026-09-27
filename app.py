@@ -12,7 +12,7 @@ os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".cache" / "matplotlib"))
 from PIL import Image, ImageTk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from optiplot import analyze_file, recommend
-from optiplot.render import render, FIT_CHOICES, FITTABLE
+from optiplot.render import render, FIT_CHOICES, FITTABLE, TYPE_OPTIONS
 from optiplot.export import export_bundle
 
 BG = "#F1F5F9"
@@ -396,11 +396,16 @@ class App(tk.Tk):
         self.redraw()
 
     def options(self):
-        return dict(
+        """Only the choices the selected figure actually consumes.
+
+        Passing everything was safe while an ignored option simply did nothing;
+        the renderer now refuses, because a control that changes nothing is worse
+        than one that is not there.
+        """
+        kind = self.active.id if self.active else None
+        opts = dict(
             size=self.size.get(),
-            fit=self.fit.get(),
             angle_unit=self.angle.get(),
-            error_type=self.error.get(),
             title=self.title_var.get(),
             xlabel=self.xlabel.get(),
             ylabel=self.ylabel.get(),
@@ -408,6 +413,11 @@ class App(tk.Tk):
             ylog=self.ylog.get(),
             dpi=300,
         )
+        if kind in FITTABLE:
+            opts["fit"] = self.fit.get()
+        if "error_type" in TYPE_OPTIONS.get(kind, ()):
+            opts["error_type"] = self.error.get()
+        return opts
 
     def redraw(self):
         if not self.profile or not self.active:
@@ -431,7 +441,7 @@ class App(tk.Tk):
         hint = (
             ""
             if self.fit.get() == "none" or self.active.id in FITTABLE
-            else "  |  此图型不接受拟合，当前拟合选择未生效"
+            else "  |  此图型不接受拟合，拟合下拉框已忽略"
         )
         self.status.set(f"当前：{self.active.title}  |  {self.active.encodings}" + hint)
 

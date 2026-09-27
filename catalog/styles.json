@@ -1,5 +1,32 @@
 [
  {
+  "id": "beeswarm-01",
+  "label": "横向没有含义，但同值排开有",
+  "patterns": [
+   "beeswarm"
+  ],
+  "data_schema": "responsivity_A_W, device",
+  "recipe": "随机抖动把两个完全相同的读数甩到不同横向位置，点的位置就成了噪声；这里按高度分带后对称排开，同一列里能数出有几个读数撞在同一个值上。横向仍然不携带信息，别把它当成第四维。"
+ },
+ {
+  "id": "beeswarm-02",
+  "label": "样本小的时候不要先算分位数",
+  "patterns": [
+   "beeswarm"
+  ],
+  "data_schema": "efficiency_percent, batch",
+  "recipe": "五个点画箱线，中位数与上下四分位都取自单个观测，箱体宽度只是在猜总体。点阵把这些点原样摆出来，读者看到的样本量就是真正的样本量。"
+ },
+ {
+  "id": "beeswarm-03",
+  "label": "点太多时这张图会糊",
+  "patterns": [
+   "beeswarm"
+  ],
+  "data_schema": "dark_current_nA, device",
+  "recipe": "分组超过 20 组或单组上千点时，排开的堆叠会连成一片，此时该回到箱线看汇总或改用直方图看形状；引擎对组数做了限制并在超出时截断，截断信息写在组标签上。"
+ },
+ {
   "id": "bland_altman-01",
   "label": "先确认同一行就是同一样本",
   "patterns": [
@@ -368,6 +395,33 @@
   "recipe": "峰位与半高宽随温度同框；二者量纲不同故分轴，若只想表达趋势应拆成上下两个子图共享横轴。"
  },
  {
+  "id": "ecdf-01",
+  "label": "分位数直接读，不必先选分箱",
+  "patterns": [
+   "ecdf"
+  ],
+  "data_schema": "responsivity_A_W, device",
+  "recipe": "直方图要先决定箱宽，经验累积分布什么都不先决定：某个值以下有多少比例，就在纵轴上找到那个高度、水平读到横轴。要报中位数、四分位或阈值分布，这张图少一层会改变结论的假设。"
+ },
+ {
+  "id": "ecdf-02",
+  "label": "两级之间没有数据，就不画成连续",
+  "patterns": [
+   "ecdf"
+  ],
+  "data_schema": "responsivity_A_W, device",
+  "recipe": "阶梯从 0.5 跳到 0.9 只说明这 40% 的观测落在同一个点上，不说明中间那些值出现过。把阶梯抹平就是替样本编出一段它没有测量的区间。"
+ },
+ {
+  "id": "ecdf-03",
+  "label": "组间样本量不同时，台阶粗细不是分布差异",
+  "patterns": [
+   "ecdf"
+  ],
+  "data_schema": "threshold_voltage_V, batch",
+  "recipe": "一个台阶的高度是 1/n。n=8 的组每步抬 12.5%，n=200 的组几乎成一条平滑线——把这两条画在一起比形状之前，先确认读者不会把台阶粗细读成分散程度。"
+ },
+ {
   "id": "energy_axis-01",
   "label": "波长与光子能量双刻度",
   "patterns": [
@@ -540,6 +594,33 @@
   ],
   "data_schema": "source, target, label",
   "recipe": "按光源、样品、编码器、传感器、重建、任务输出排列；区分光路和计算步骤。"
+ },
+ {
+  "id": "group_bar-01",
+  "label": "SD 与 SEM 是两种语气",
+  "patterns": [
+   "group_bar"
+  ],
+  "data_schema": "responsivity_A_W, device",
+  "recipe": "同样一批数据，SEM 的误差棒比 SD 短 √n 倍。SD 说的是读数有多分散，SEM 说的是均值估得多准，两者都常被写成「误差棒」。图例必须写清用的哪个，换掉它往往就把「差异不明显」变成「差异显著」。"
+ },
+ {
+  "id": "group_bar-02",
+  "label": "柱状必须从 0 起画",
+  "patterns": [
+   "group_bar"
+  ],
+  "data_schema": "responsivity_A_W, device",
+  "recipe": "柱高比的是绝对量级，纵轴一旦从接近最小值处截断，3% 的差别就能看起来像两倍。引擎把纵轴下界钉在 0（数据含负值时钉在 0 与最小值之间），这不是保守，是柱状图唯一自洽的画法。"
+ },
+ {
+  "id": "group_bar-03",
+  "label": "一柱一棒之外什么都没了",
+  "patterns": [
+   "group_bar"
+  ],
+  "data_schema": "efficiency_percent, batch",
+  "recipe": "均值与误差棒丢掉了双峰、离群点、每组真实样本量与读数顺序。一个均值 0.8、SD 0.2 的组可能是 30 个稳定读数，也可能是 25 个 0.7 加 5 个 1.5——要区分这两种，得回到点阵、箱线或直方图。"
  },
  {
   "id": "heatmap-01",

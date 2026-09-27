@@ -1318,6 +1318,19 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 {"value": value},
                 4 if only_number else 1,
             )
+            ecdf_enc = {"value": value}
+            if group and _valid_count(data, [group, value]) >= 4:
+                ecdf_enc["group"] = group
+            add(
+                "ecdf",
+                "经验累积分布",
+                "high",
+                "分位数、阈值分布与批次良率都能直接从阶梯上读，不需要先选分箱；"
+                "阶梯是经验分布的原样——两级之间没有观测就不画成连续，"
+                "各组样本量不同会让阶梯粗细不同，那不是分布差异",
+                ecdf_enc,
+                3,
+            )
         if group and _valid_count(data, [group, value]) >= 4:
             sizes = data[[group, value]].dropna().groupby(group, observed=True)[value].count()
             if (sizes >= 2).sum() >= 2:
@@ -1328,6 +1341,25 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                     "至少两组有重复数值观测，可比较中位数、四分位与原始点",
                     {"group": group, "value": value},
                     7,
+                )
+                add(
+                    "beeswarm",
+                    "分组点阵（同值排开）",
+                    "high",
+                    "每个读数就是一个点，不先算任何东西；横向只用来把同一数值的点排开，"
+                    "不携带信息。样本量小时分位数本身就是在猜，这种图比箱线少一层假设",
+                    {"group": group, "value": value},
+                    8,
+                )
+                add(
+                    "group_bar",
+                    "分组柱状与误差棒",
+                    "medium",
+                    "每组只留一个均值加一条误差棒，分布形态（双峰、离群点、样本量差别）"
+                    "全部被抹平，小样本时尤其容易读过头；误差棒含义由 error_type 决定，"
+                    "SD 描述数据分散、SEM 描述均值精度，两者相差 √n 倍，图例会写明用的哪个",
+                    {"group": group, "value": value},
+                    9,
                 )
     # --- two measurements of one quantity on the same subjects. Row order is the
     # pairing here, and the engine cannot verify it: nothing in a table says that
