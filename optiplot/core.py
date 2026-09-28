@@ -282,6 +282,28 @@ def _axis_rank(name: str) -> int:
     return 99
 
 
+def _label_table(p, data, eligible):
+    """A column of unique row labels plus several numeric metrics, or (None, []).
+
+    Device comparison tables arrive wide: one row per device, one column per
+    metric. The labels identify rows rather than group replicates, and the row
+    order is alphabetical, not a sweep - which is why the curve views must not
+    offer to connect the devices with a line.
+    """
+    label = next(
+        (
+            c
+            for c in p.categorical_columns
+            if data[c].notna().all() and bool(data[c].is_unique) and data[c].nunique() >= 3
+        ),
+        None,
+    )
+    if label is None:
+        return None, []
+    metrics = [c for c in eligible if c != label and data[c].notna().sum() >= 3]
+    return (label, metrics) if len(metrics) >= 3 else (None, [])
+
+
 def _identifier(name: str) -> bool:
     return _has(name, {"id", "index", "identifier"}, ("序号", "编号")) or str(name).lower() in {
         "row",
@@ -868,6 +890,8 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         )
     responses = [c for c in eligible if c != x and c != group and c not in p.angle_columns]
     y = responses[0] if responses else None
+    # One row per device with several metrics: the rows are a list, not a sweep.
+    label_column, label_metrics = _label_table(p, data, eligible)
     stokes = _stokes_columns(p.numeric_columns)
     if stokes:
         add(
@@ -1002,6 +1026,7 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             line_ys
             and p.n_rows >= 4
             and line_unique
+            and label_column is None
             and (not p.grid_like or group)
             and (_axis_rank(x) < 99 or _ordered(data[x]))
         ):
@@ -1206,7 +1231,7 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         # that one particular function family is being tested, so the reason names
         # the family and what the axis still cannot settle.
         x_span = _decade_span(data[x])
-        if x_span >= 2.0:
+        if x_span >= 2.0 and label_column is None:
             loggable = [c for c in measured if _decade_span(data[c]) >= 1.0]
             if loggable:
                 add(
@@ -1222,7 +1247,7 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 )
         y_span = max([_decade_span(data[c]) for c in measured], default=0.0)
         decayed = [c for c in measured if _decade_span(data[c]) >= 1.0]
-        if decayed:
+        if decayed and label_column is None:
             add(
                 "semi_log",
                 "半对数曲线（指数诊断）",
@@ -1235,7 +1260,7 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                 7,
             )
 
-        if _strictly_ordered(data[x]) and measured:
+        if _strictly_ordered(data[x]) and measured and label_column is None:
             integrated = [c for c in measured if _valid_count(data, [x, c]) >= 8]
             if integrated:
                 add(
@@ -1360,6 +1385,50 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
                     "SD 描述数据分散、SEM 描述均值精度，两者相差 √n 倍，图例会写明用的哪个",
                     {"group": group, "value": value},
                     9,
+                )
+    if label_column:
+        add(
+            "group_metric_heatmap",
+            "器件 × 指标热表",
+            "medium",
+            f"{label_column} 的 {len(data[label_column].unique())} 行每行一个器件、"
+            f"{len(label_metrics)} 列各是一个指标，可按指标各自归一后涂色比较；"
+            "颜色只表示同一指标内部的相对位置，而各指标的好坏方向未必一致"
+            "（暗电流越低越好、带宽越高越好），跨行同色不等于同等好坏。"
+            "最差=0、最好=1 是构造出来的，两行数据也会铺满整个色带",
+            {"row": label_column, "columns": label_metrics},
+            0,
+        )
+    # --- is the spread normal? the bar and agreement figures above assume it,
+    # so the check belongs next to them rather than in a separate cluster.
+    if eligible:
+        checked = y or eligible[0]
+        if data[checked].dropna().size >= 8:
+            qq_enc = {"value": checked}
+            if group and _valid_count(data, [group, checked]) >= 4:
+                qq_enc["group"] = group
+            add(
+                "qq_norm",
+                "正态 Q-Q 图",
+                "high",
+                "把样本分位数画在正态分位数上，形状一致就落在一条直线上，"
+                "弯在哪里尾部就在哪里；点位取 (i − 0.5)/n，两端那几个点最敏感也最不可靠。"
+                "这是看图判断形状，不是检验，不给 p 值",
+                qq_enc,
+                2,
+            )
+        if group and _valid_count(data, [group, checked]) >= 4:
+            sizes = data[[group, checked]].dropna().groupby(group, observed=True)[checked].count()
+            if (sizes >= 3).sum() >= 2:
+                add(
+                    "forest",
+                    "分组均值与置信区间",
+                    "medium",
+                    "每组画均值点加 95% 置信区间（t 分布，按各组自己的自由度），"
+                    "大小用位置编码而不是柱子的面积，所以不依赖 0 基线；"
+                    "区间近似正态才成立，且区间重叠不等于两组差异不显著——那要另做两两比较",
+                    {"group": group, "value": checked},
+                    10,
                 )
     # --- two measurements of one quantity on the same subjects. Row order is the
     # pairing here, and the engine cannot verify it: nothing in a table says that

@@ -9,6 +9,7 @@ import pandas as pd
 import matplotlib
 from matplotlib.figure import Figure
 from matplotlib.colors import TwoSlopeNorm
+from scipy.stats import norm as _NORMAL, t as _T
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
 try:  # normal import, as part of the optiplot package
@@ -70,9 +71,12 @@ FIGURE_TYPES = (
     "poincare_sphere",
     "distribution",
     "ecdf",
+    "qq_norm",
+    "forest",
     "beeswarm",
     "group_bar",
     "box",
+    "group_metric_heatmap",
     "correlation",
     "flow",
     "table",
@@ -118,7 +122,9 @@ TYPE_OPTIONS = {
     "cumulative_response": ("cumulative",),
     "errorbar": ("error_type",),
     "group_bar": ("error_type",),
+    "group_metric_heatmap": ("metric_scale",),
 }
+METRIC_SCALES = ("minmax", "zscore")
 OPTION_OWNERS = {}
 for _kind, _keys in TYPE_OPTIONS.items():
     for _key in _keys:
@@ -2182,6 +2188,150 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
         ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
         if group:
             _legend(ax, style, title=group)
+    elif kind == "qq_norm":
+        value = e["value"]
+        group = e.get("group")
+        if group:
+            labels, arrays, dropped = _grouped_values(df, group, value)
+            colours = _group_colours(style, len(labels))
+            curves = list(zip(labels, arrays, colours))
+        else:
+            a = pd.to_numeric(df[value], errors="coerce").replace([np.inf, -np.inf], np.nan)
+            curves = [(value, a.dropna().to_numpy(dtype=float), palette[0 % len(palette)])]
+        for name, a, colour in curves:
+            v = np.sort(a)
+            # (i + 0.5)/n: the Hazen plotting position. The choice is visible at the
+            # ends, which is where the whole figure is read, so it is named.
+            position = (np.arange(v.size) + 0.5) / v.size
+            theory = _NORMAL.ppf(position)
+            ax.plot(theory, v, "o", ms=style.marker_size, color=colour, alpha=style.scatter_alpha,
+                    label=name, zorder=style.series_zorder)
+            if len(curves) == 1:
+                q_low, q_high = np.percentile(v, [25.0, 75.0])
+                z_low, z_high = _NORMAL.ppf([0.25, 0.75])
+                slope = (q_high - q_low) / (z_high - z_low)
+                ax.plot(
+                    theory,
+                    q_low + slope * (theory - z_low),
+                    linestyle=(0, (4, 3)),
+                    color="#7A94AB",
+                    linewidth=max(0.7, float(style.line_width) * 0.8),
+                    label="四分位参考线",
+                )
+        ax.set(xlabel="正态分位数（点位取 (i − 0.5)/n）", ylabel=value)
+        lines = [
+            "点落在直线上说明形状与正态一致；弯的地方就是尾部，两端那几个点最敏感也最不可靠",
+            (
+                "分组时不画参考线：比的是各条点列各自弯不弯，一条公共直线会盖住差别"
+                if group
+                else "这是看图判断形状，不是检验，所以不给 p 值"
+            ),
+        ]
+        if group and dropped:
+            lines.append(_group_limit_note(dropped).lstrip("\n"))
+        ax.set_title("\n".join(lines), loc="left", pad=8,
+                     fontsize=style.resolved_font_size() * 0.85)
+        if group:
+            _legend(ax, style, title=group)
+    elif kind == "forest":
+        group, value = e["group"], e["value"]
+        labels, arrays, dropped = _grouped_values(df, group, value)
+        pooled = np.concatenate(arrays)
+        levels = np.arange(1, len(labels) + 1)
+        for y, a in zip(levels, arrays):
+            n = a.size
+            mean = float(a.mean())
+            if n < 2:
+                ax.plot(mean, y, marker="|", ms=style.marker_size * 1.8,
+                        color=palette[0 % len(palette)], label="n=1，区间无定义")
+                continue
+            sem = float(a.std(ddof=1)) / np.sqrt(n)
+            half = float(_T.ppf(0.975, n - 1)) * sem
+            ax.errorbar(
+                mean, y, xerr=half, fmt="s", ms=style.marker_size,
+                color=palette[0 % len(palette)],
+                ecolor=palette[0 % len(palette)],
+                elinewidth=max(0.8, float(style.line_width) * 0.9),
+                capsize=3.0,
+            )
+        ax.axvline(float(pooled.mean()), color="#7A94AB", linestyle=":", linewidth=0.9,
+                   label=f"合并均值 {float(pooled.mean()):.4g}")
+        # The interval width carries 1/sqrt(n), so the group label has to say what
+        # n was or a wide bar reads as a noisy population.
+        ax.set_yticks(levels, [f"{label} (n={a.size})" for label, a in zip(labels, arrays)])
+        ax.set_ylim(0.5, len(labels) + 0.5)
+        ax.set(xlabel=f"均值 {value}", ylabel=group)
+        note = (
+            "区间是每组均值的 95% 置信区间（t 分布，按各组自己的自由度），近似正态才成立\n"
+            "大小用位置读，所以这张图不需要 0 基线；区间重叠不代表两组差异不显著，"
+            "那要另做两两比较" + _group_limit_note(dropped)
+        )
+        ax.set_title(note, loc="left", pad=8, fontsize=style.resolved_font_size() * 0.85)
+        _legend(ax, style)
+    elif kind == "group_metric_heatmap":
+        row, cols = e["row"], list(e["columns"])
+        scale = str(opts.get("metric_scale", "minmax"))
+        if scale not in METRIC_SCALES:
+            raise ValueError(
+                f"metric_scale 需是 {'/'.join(METRIC_SCALES)} 之一，当前 {scale!r}"
+            )
+        table = df.set_index(row)[cols].apply(pd.to_numeric, errors="coerce")
+        table = table.replace([np.inf, -np.inf], np.nan)
+        if bool(table.index.duplicated().any()):
+            raise ValueError(f"{row} 有重复行，一个器件只能占一行。")
+        if scale == "minmax":
+            low, high = table.min(axis=0), table.max(axis=0)
+            width = (high - low).replace(0.0, np.nan)
+            painted = (table - low) / width
+            caption, vmin, vmax = "指标内 min–max", 0.0, 1.0
+        else:
+            deviation = table.std(axis=0, ddof=1).replace(0.0, np.nan)
+            painted = (table - table.mean(axis=0)) / deviation
+            limit = float(np.nanmax(np.abs(painted.to_numpy()))) or 1.0
+            caption, vmin, vmax = "指标内 z 分数", -limit, limit
+        if len(table) < 2:
+            raise ValueError("热表至少需要两行器件才能比较。")
+        flat = np.ma.masked_invalid(painted.to_numpy(dtype=float))
+        cmap, norm = _surface_colormap(flat, style)
+        image = ax.imshow(
+            flat,
+            aspect="auto",
+            cmap=cmap,
+            **({} if norm is not None else {"vmin": vmin, "vmax": vmax}),
+        )
+        # Where the cell sits along the colour ramp, in 0-1, decides whether the
+        # number written on it has to be light or dark.
+        floor = float(norm.vcenter if norm is not None else vmin)
+        reach = (float(norm.vmax if norm is not None else vmax) - floor) or 1.0
+        shade = (painted.to_numpy(dtype=float) - floor) / reach
+        ax.set_xticks(range(len(cols)), cols, rotation=35, ha="right")
+        ax.set_yticks(range(len(table)), [str(v) for v in table.index])
+        missing = int(table.isna().to_numpy().sum())
+        # A constant metric has no width to normalise by; those cells are blank
+        # too, but for a different reason than never having been measured.
+        uniform = int((painted.isna() & table.notna()).to_numpy().sum())
+        for i in range(len(table)):
+            for j in range(len(cols)):
+                raw = table.iloc[i, j]
+                ax.text(
+                    j, i, "—" if pd.isna(raw) else f"{raw:.3g}",
+                    ha="center", va="center",
+                    fontsize=style.resolved_font_size() * 0.72,
+                    color="white" if np.isfinite(shade[i, j]) and shade[i, j] > 0.6 else "black",
+                )
+        _colorbar(fig, image, ax, f"{caption}（不是绝对量级）", style)
+        lines = [
+            f"颜色是{caption}，每列各自归一：同一颜色在不同列里表示不同的好坏",
+            "格子里写的仍是原始数值；方向要看指标名（暗电流越低越好、带宽越高越好）",
+        ]
+        if missing:
+            lines.append(f"{missing} 个格子没有读数，画成空白而不是补值")
+        if uniform:
+            lines.append(
+                f"{uniform} 个格子所在的指标在这一批器件里取值全同，归一化无定义，画成空白"
+            )
+        ax.set_title("\n".join(lines), loc="left", pad=8,
+                     fontsize=style.resolved_font_size() * 0.85)
     elif kind == "beeswarm":
         group, value = e["group"], e["value"]
         labels, arrays, dropped = _grouped_values(df, group, value)

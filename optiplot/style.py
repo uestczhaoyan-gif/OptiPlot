@@ -71,9 +71,12 @@ AXIS_STYLED = frozenset(
         "errorbar",
         "distribution",
         "ecdf",
+        "qq_norm",
+        "forest",
         "beeswarm",
         "group_bar",
         "box",
+        "group_metric_heatmap",
     }
 )
 # Journal column widths. `preview` is the on-screen default.
@@ -99,6 +102,7 @@ DATA_KEYS = frozenset(
         "cumulative",
         "relative",
         "norm_target",
+        "metric_scale",
         "reference",
     }
 )

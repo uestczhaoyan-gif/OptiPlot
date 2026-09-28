@@ -1777,6 +1777,205 @@ def test_error_type_only_reaches_the_types_that_read_it():
         render(p, rec, options={"error_type": "sem"})
 
 
+# ── shape checks, intervals and the device table ───────────────────
+def device_table(rows=6):
+    rng = np.random.default_rng(6)
+    return analyze_dataframe(
+        pd.DataFrame(
+            {
+                "device": [f"D{i:02d}" for i in range(rows)],
+                "responsivity_A_W": 0.5 + np.arange(rows) * 0.1,
+                "dark_current_nA": np.array([1.2, 0.9, 1.1, 0.8, 1.0, 0.95][:rows]),
+                "bandwidth_GHz": np.array([30.0, 25.0, 31.0, 28.0, 33.0, 27.0][:rows]),
+            }
+        )
+    )
+
+
+def test_a_device_table_is_not_offered_as_a_curve():
+    """One row per device with several metrics is a list, not a sweep. Joining the
+    devices with a line invents an order the labels do not have, and a line is
+    exactly what a reader then interprets as a trend."""
+    offered = {r.id for r in recommend(analyze_file(ROOT / "examples" / "sample_device_matrix.csv"))}
+    assert "group_metric_heatmap" in offered
+    for curve in ("spectrum_lines", "peak_annotation", "spectral_derivative",
+                  "cumulative_response", "log_log", "semi_log"):
+        assert curve not in offered, f"{curve} connected unrelated devices"
+
+
+def test_the_heat_table_colours_the_rank_and_writes_the_number():
+    p = device_table()
+    rec = next(r for r in recommend(p) if r.id == "group_metric_heatmap")
+    ax = render(p, rec).axes[0]
+    painted = np.asarray(ax.get_images()[0].get_array(), dtype=float)
+    column = p.data.responsivity_A_W.to_numpy(dtype=float)
+    assert np.allclose(painted[:, 0], (column - column.min()) / (column.max() - column.min()))
+    written = [text.get_text() for text in ax.texts]
+    assert f"{column[3]:.3g}" in written, "the cell lost its raw value"
+    assert "0.8" in written or f"{column[3]:.3g}" in written
+
+
+def test_a_missing_cell_is_blank_and_counted_and_a_constant_column_says_why():
+    p = device_table()
+    with_hole = p.data.copy()
+    with_hole.loc[2, "bandwidth_GHz"] = np.nan
+    p = analyze_dataframe(with_hole)
+    rec = next(r for r in recommend(p) if r.id == "group_metric_heatmap")
+    ax = render(p, rec).axes[0]
+    assert any(text.get_text() == "—" for text in ax.texts), "the unmeasured cell was filled"
+    assert "1 个格子没有读数" in ax.get_title(loc="left")
+    # A metric that never varies is excluded from the recommendation and named in
+    # the profile notes; reaching the renderer with one means the user picked the
+    # column by hand, which is the case that must not be drawn as "unmeasured".
+    flat = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "device": [f"D{i}" for i in range(4)],
+                "responsivity_A_W": [0.5, 0.6, 0.7, 0.8],
+                "dark_current_nA": [1.0, 1.0, 1.0, 1.0],
+                "bandwidth_GHz": [30.0, 25.0, 31.0, 28.0],
+            }
+        )
+    )
+    assert "dark_current_nA" in " ".join(flat.notes), "the constant metric is not disclosed"
+    flat_rec = Recommendation(
+        "group_metric_heatmap", "热表", "medium", "",
+        {
+            "row": "device",
+            "columns": ["responsivity_A_W", "dark_current_nA", "bandwidth_GHz"],
+        },
+    )
+    text = render(flat, flat_rec).axes[0].get_title(loc="left")
+    assert "取值全同" in text, "a metric with no width was reported as unmeasured"
+    assert "没有读数" not in text
+
+
+def test_metric_scale_changes_the_colour_and_not_the_numbers():
+    p = device_table()
+    rec = next(r for r in recommend(p) if r.id == "group_metric_heatmap")
+    words = lambda ax: sorted(t.get_text() for t in ax.texts)
+    minmax = render(p, rec).axes[0]
+    zscore = render(p, rec, options={"metric_scale": "zscore"}).axes[0]
+    assert words(minmax) == words(zscore)
+    a = np.asarray(minmax.get_images()[0].get_array(), dtype=float)
+    b = np.asarray(zscore.get_images()[0].get_array(), dtype=float)
+    assert not np.allclose(a, b)
+    assert b.min() < 0 < b.max(), "z-scoring should straddle zero"
+    with pytest.raises(ValueError, match="metric_scale"):
+        render(p, rec, options={"metric_scale": "rank"})
+
+
+def test_the_heat_table_refuses_a_label_that_repeats():
+    repeated = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "device": ["D01", "D01", "D02", "D03"],
+                "responsivity_A_W": [0.5, 0.6, 0.7, 0.8],
+                "dark_current_nA": [1.2, 0.9, 1.1, 0.8],
+                "bandwidth_GHz": [30.0, 25.0, 31.0, 28.0],
+            }
+        )
+    )
+    rec = Recommendation(
+        "group_metric_heatmap", "热表", "medium", "",
+        {"row": "device", "columns": ["responsivity_A_W", "dark_current_nA", "bandwidth_GHz"]},
+    )
+    with pytest.raises(ValueError, match="重复行"):
+        render(repeated, rec)
+
+
+def test_the_qq_points_are_the_sample_quantiles_against_the_normal_ones():
+    from scipy.stats import norm
+
+    p = grouped(n_per=11)
+    rec = Recommendation("qq_norm", "qq", "high", "", {"value": "efficiency_percent"})
+    ax = render(p, rec).axes[0]
+    points = ax.lines[0]
+    x = np.asarray(points.get_xdata(), dtype=float)
+    y = np.asarray(points.get_ydata(), dtype=float)
+    values = np.sort(p.data.efficiency_percent.to_numpy(dtype=float))
+    assert np.array_equal(y, values)
+    assert np.allclose(x, norm.ppf((np.arange(values.size) + 0.5) / values.size))
+
+
+def test_a_right_skewed_sample_bends_up_at_the_top():
+    """The one shape claim the figure can be tested on without a p value: a long
+    upper tail sits above the quartile line at the high end."""
+    rng = np.random.default_rng(8)
+    skewed = np.concatenate([rng.exponential(1.0, 40), [12.0, 15.0]])
+    p = analyze_dataframe(pd.DataFrame({"efficiency_percent": skewed}))
+    rec = Recommendation("qq_norm", "qq", "high", "", {"value": "efficiency_percent"})
+    ax = render(p, rec).axes[0]
+    theory = np.asarray(ax.lines[0].get_xdata(), dtype=float)
+    sample = np.asarray(ax.lines[0].get_ydata(), dtype=float)
+    line = ax.lines[1]
+    reference = np.interp(theory, np.asarray(line.get_xdata(), dtype=float),
+                          np.asarray(line.get_ydata(), dtype=float))
+    assert np.all((sample - reference)[-3:] > 0), "the top tail did not lift off the line"
+
+
+def test_the_grouped_qq_draws_no_shared_reference_line():
+    single = grouped(n_per=11)
+    p = analyze_file(ROOT / "examples" / "sample_devices.csv")
+    grouped_qq = next(r for r in recommend(p) if r.id == "qq_norm")
+    axes = render(p, grouped_qq).axes[0]
+    assert len(axes.lines) == 3, "one point series per group, no line"
+    assert all(line.get_linestyle() in ("None", "") for line in axes.lines)
+    solo = Recommendation("qq_norm", "qq", "high", "", {"value": "responsivity_A_W"})
+    lone = render(p, solo).axes[0]
+    assert len(lone.lines) == 2 and lone.lines[1].get_linestyle() != "None"
+    assert "不给 p 值" in lone.get_title(loc="left")
+    assert single is not None
+
+
+def test_the_interval_is_the_t_based_confidence_interval_of_each_group():
+    p = grouped(n_per=9)
+    rec = Recommendation("forest", "forest", "medium", "",
+                         {"group": "batch", "value": "efficiency_percent"})
+    ax = render(p, rec).axes[0]
+    from scipy.stats import t
+
+    # one container per group: each interval is its own errorbar call
+    drawn = [
+        abs(float(end[0] - start[0])) / 2.0
+        for container in ax.containers
+        for start, end in container[2][0].get_segments()
+    ]
+    expected = []
+    for batch in ("B0", "B1", "B2", "B3"):
+        a = p.data.loc[p.data.batch == batch, "efficiency_percent"].to_numpy(dtype=float)
+        expected.append(float(t.ppf(0.975, a.size - 1)) * a.std(ddof=1) / np.sqrt(a.size))
+    assert drawn == pytest.approx(expected)
+
+
+def test_a_group_of_one_gets_a_mark_and_no_interval():
+    p = grouped(n_per=6, groups=3, singles=1)
+    rec = Recommendation("forest", "forest", "medium", "",
+                         {"group": "batch", "value": "efficiency_percent"})
+    ax = render(p, rec).axes[0]
+    labels = ax.get_legend_handles_labels()[1]
+    assert any("n=1" in label for label in labels), labels
+    assert len(ax.containers) == 2, "only the two groups with spread got an interval"
+
+
+def test_the_forest_plot_does_not_invent_a_zero_baseline():
+    """The bar chart needs zero because area does; a point and a whisker do not,
+    and forcing zero here would flatten every interval into a dot."""
+    tall = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "batch": np.repeat(["B1", "B2"], 8),
+                "efficiency_percent": np.r_[np.full(8, 1000.0) + np.arange(8) * 1.0,
+                                            np.full(8, 1030.0) + np.arange(8) * 1.0],
+            }
+        )
+    )
+    rec = Recommendation("forest", "forest", "medium", "",
+                         {"group": "batch", "value": "efficiency_percent"})
+    left, right = render(tall, rec).axes[0].get_xlim()
+    assert left > 900.0, (left, right)
+
+
 def test_no_figure_option_is_accepted_by_a_type_that_ignores_it():
     """The family pair made the rule explicit, but `normalize` on a plain heatmap
     and `cumulative` on a curve had the same silent no-effect."""
