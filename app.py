@@ -12,7 +12,13 @@ os.environ.setdefault("MPLCONFIGDIR", str(ROOT / ".cache" / "matplotlib"))
 from PIL import Image, ImageTk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from optiplot import analyze_file, recommend
-from optiplot.render import render, FIT_CHOICES, FITTABLE, TYPE_OPTIONS
+from optiplot.render import (
+    render,
+    dispose_figure,
+    FIT_CHOICES,
+    FITTABLE,
+    TYPE_OPTIONS,
+)
 from optiplot.export import export_bundle
 
 BG = "#F1F5F9"
@@ -311,7 +317,7 @@ class App(tk.Tk):
                 fig = render(self.profile, r)
                 buf = io.BytesIO()
                 fig.savefig(buf, format="png", dpi=80)
-                fig.clear()
+                dispose_figure(fig)
                 buf.seek(0)
                 im = Image.open(buf)
                 im.thumbnail((410, 205), Image.Resampling.LANCZOS)

@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 from matplotlib.colors import to_hex
 from optiplot import analyze_file, analyze_dataframe, recommend, Recommendation
-from optiplot.render import render, FIGURE_TYPES, TYPE_OPTIONS
+from optiplot.render import dispose_figure, render, FIGURE_TYPES, TYPE_OPTIONS
 from optiplot.style import Style
 from optiplot.export import export_bundle
 
@@ -26,7 +26,7 @@ def test_every_recommendation_renders(path, tmp_path):
         out = tmp_path / (r.id + ".png")
         fig = render(profile, r, out)
         assert out.stat().st_size > 1000
-        fig.clear()
+        dispose_figure(fig)
 
 
 def test_no_automatic_fit_and_keeps_missing_gaps():
@@ -1974,6 +1974,160 @@ def test_the_forest_plot_does_not_invent_a_zero_baseline():
                          {"group": "batch", "value": "efficiency_percent"})
     left, right = render(tall, rec).axes[0].get_xlim()
     assert left > 900.0, (left, right)
+
+
+# ── one complex quantity stored as two columns ─────────────────────
+def vna():
+    return analyze_file(ROOT / "examples" / "sample_vna_response.csv")
+
+
+def solver_table():
+    f = np.geomspace(0.1, 40.0, 60)
+    h = 1.0 / (1.0 + 1j * f / 5.0)
+    return analyze_dataframe(
+        pd.DataFrame({"frequency_ghz": f, "h_re": h.real, "h_im": h.imag})
+    )
+
+
+def test_a_complex_pair_is_claimed_by_its_names_and_nothing_else():
+    from optiplot.core import _complex_pairs
+
+    assert _complex_pairs(["frequency_ghz", "s21_db", "s21_phase_deg"]) == {
+        "s21": {"kind": "polar", "parts": ("s21_db", "s21_phase_deg")}
+    }
+    assert _complex_pairs(["field_re", "field_im"]) == {
+        "field": {"kind": "cartesian", "parts": ("field_re", "field_im")}
+    }
+    # a trailing unit must not hide the role, and two channels must not merge
+    assert _complex_pairs(["s11_mag_db", "s11_phase_deg", "s21_mag_db", "s21_phase_deg"]) == {
+        "s11": {"kind": "polar", "parts": ("s11_mag_db", "s11_phase_deg")},
+        "s21": {"kind": "polar", "parts": ("s21_mag_db", "s21_phase_deg")},
+    }
+    assert _complex_pairs(["dark_current_nA", "bandwidth_GHz", "responsivity_A_W"]) == {}
+    assert _complex_pairs(["phase_noise_db"]) == {}
+
+
+def test_the_two_parts_of_one_quantity_are_not_two_measurements():
+    """Real and imaginary parts share a stem, so the name test alone calls them
+    comparable - but subtracting one from the other is not a measurement."""
+    ids = {r.id for r in recommend(solver_table())}
+    assert {"bode", "nyquist"} <= ids
+    for derived in ("spectral_difference", "spectral_ratio", "bland_altman"):
+        assert derived not in ids, f"{derived} differenced re against im"
+    spectrum = analyze_file(ROOT / "examples" / "sample_spectrum.csv")
+    assert "spectral_difference" in {r.id for r in recommend(spectrum)}, "the guard bit too deep"
+
+
+def test_the_bode_panels_share_one_axis_and_label_it_once():
+    p = vna()
+    fig = render(p, pick(p, "bode"))
+    assert len(fig.axes) == 2
+    top, bottom = fig.axes
+    assert top.get_xscale() == "log"
+    assert top.get_xlim() == pytest.approx(bottom.get_xlim())
+    assert top.get_xlabel() == "" and bottom.get_xlabel() == "frequency_ghz"
+    assert not any(label.get_visible() for label in top.get_xticklabels())
+
+
+def test_the_phase_stays_wrapped_until_unwrapping_is_asked_for():
+    p = vna()
+    rec = pick(p, "bode")
+    wrapped = render(p, rec).axes[1]
+    text = render(p, rec).axes[0].get_title(loc="left")
+    assert "1 处 ±180° 跳变" in text
+    values = np.asarray(wrapped.get_lines()[0].get_ydata(), dtype=float)
+    assert np.max(np.abs(np.diff(values))) > 180.0, "the seam was smoothed away"
+    loose = render(p, rec, options={"unwrap": True}).axes[1]
+    open_values = np.asarray(loose.get_lines()[0].get_ydata(), dtype=float)
+    assert np.max(np.abs(np.diff(open_values))) < 20.0
+    assert "不再是仪器读数" in render(p, rec, options={"unwrap": True}).axes[0].get_title(
+        loc="left"
+    )
+
+
+def test_a_decibel_magnitude_is_not_inverted_into_the_complex_plane():
+    """Undoing a dB column needs the factor it was taken with, and the name does
+    not say: 20log10|S21| and 10log10|S21|^2 are one measurement written twice.
+    So the view is not offered, and refuses outright if it is forced."""
+    db = analyze_dataframe(
+        pd.DataFrame(
+            {
+                "frequency_ghz": np.geomspace(0.2, 40.0, 40),
+                "s21_db": -np.linspace(0.0, 30.0, 40),
+                "s21_phase_deg": -np.linspace(2.0, 175.0, 40),
+            }
+        )
+    )
+    ids = {r.id for r in recommend(db)}
+    assert "bode" in ids, "the magnitude panel needs no inverse conversion"
+    assert "nyquist" not in ids, "the complex-plane view guessed a factor"
+    forced = Recommendation("nyquist", "复平面", "high", "",
+                            {"response": "s21", "kind": "polar",
+                             "parts": ["s21_db", "s21_phase_deg"]})
+    with pytest.raises(ValueError, match="10 还是 20"):
+        render(db, forced)
+
+
+def test_a_linear_magnitude_is_converted_to_decibels_once_and_named():
+    p = vna()
+    top = render(p, pick(p, "bode")).axes[0]
+    plotted = np.asarray(top.get_lines()[0].get_ydata(), dtype=float)
+    stored = p.data.s21_abs.to_numpy(dtype=float)
+    assert np.allclose(plotted, 10.0 * np.log10(stored)), "the factor is not the stated one"
+    assert "10·log10|s21|" in top.get_ylabel()
+
+
+def test_a_linear_magnitude_says_which_decibel_factor_it_used():
+    f = np.geomspace(0.2, 20.0, 40)
+    linear = analyze_dataframe(
+        pd.DataFrame({"frequency_ghz": f, "h_abs": 1.0 / (1.0 + f / 5.0), "h_phase_deg": -np.degrees(np.arctan(f / 5.0))})
+    )
+    rec = pick(linear, "bode")
+    top = render(linear, rec).axes[0]
+    assert "10·log10|h|" in top.get_ylabel()
+    assert "场幅用 20、功率用 10" in top.get_title(loc="left")
+    doubled = render(linear, rec, style=Style(db_factor=20.0)).axes[0]
+    assert "20·log10|h|" in doubled.get_ylabel()
+    assert np.allclose(
+        np.asarray(doubled.get_lines()[0].get_ydata(), dtype=float)
+        - np.asarray(top.get_lines()[0].get_ydata(), dtype=float),
+        np.asarray(top.get_lines()[0].get_ydata(), dtype=float),
+    ), "the factor must scale the axis by exactly two"
+
+
+def test_the_complex_plane_is_equal_aspect_and_directed():
+    p = solver_table()
+    ax = render(p, pick(p, "nyquist")).axes[0]
+    assert ax.get_aspect() in ("equal", 1.0)
+    labels = [collection.get_label() for collection in ax.collections]
+    assert "起点（按行序）" in labels and "终点" in labels
+
+
+def test_a_passive_response_traces_the_unit_circle_and_then_shrinks():
+    """The invariant that caught a real bug. Feeding the dB column to cos/sin as
+    if it were a ratio put the trace out at -40; converted properly, a low-pass
+    starts at |H| = 1 and collapses toward the origin. The bound is loose on
+    purpose - noise on a real VNA trace lifts it a hundredth over 1, and that is
+    not a bug."""
+    p = vna()
+    ax = render(p, pick(p, "nyquist")).axes[0]
+    line = ax.get_lines()[0]
+    radius = np.hypot(
+        np.asarray(line.get_xdata(), dtype=float), np.asarray(line.get_ydata(), dtype=float)
+    )
+    assert np.nanmax(radius) < 1.05, np.nanmax(radius)
+    assert np.nanmax(radius) > 0.99, "the trace never reached the passband edge"
+    assert radius[-1] < 0.01, "the stopband did not collapse toward the origin"
+
+
+def test_a_missing_point_breaks_the_trace_instead_of_cutting_across():
+    with_hole = vna().data.copy()
+    with_hole.loc[40, "s21_phase_deg"] = np.nan
+    p = analyze_dataframe(with_hole)
+    ax = render(p, pick(p, "nyquist")).axes[0]
+    y = np.asarray(ax.get_lines()[0].get_ydata(), dtype=float)
+    assert np.isnan(y).any(), "the trace was bridged over the missing point"
+    assert "1 个点读数不完整" in ax.get_title(loc="left")
 
 
 def test_no_figure_option_is_accepted_by_a_type_that_ignores_it():

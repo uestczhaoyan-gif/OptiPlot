@@ -63,6 +63,8 @@ AXIS_STYLED = frozenset(
         "cumulative_response",
         "dual_axis",
         "peak_evolution",
+        "bode",
+        "nyquist",
         "scatter_fit",
         "density",
         "scatter_marginals",
@@ -103,6 +105,7 @@ DATA_KEYS = frozenset(
         "relative",
         "norm_target",
         "metric_scale",
+        "unwrap",
         "reference",
     }
 )

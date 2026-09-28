@@ -15,7 +15,7 @@ import pytest
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from optiplot import analyze_dataframe, analyze_file, recommend
 import zipfile
-from optiplot.render import render
+from optiplot.render import dispose_figure, render
 from optiplot.export import export_bundle
 from optiplot.style import (
     CJK_PRESETS,
@@ -162,7 +162,7 @@ def test_family_knob_changes_latin_glyphs_when_cjk_is_off():
         fig = render(p, curve_choice(p), style=style)
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=100)
-        fig.clear()
+        dispose_figure(fig)
         return hashlib.sha256(buf.getvalue()).hexdigest()
 
     assert digest(Style(family="serif", cjk="none")) != digest(
@@ -295,7 +295,7 @@ def test_axis_knobs_change_the_rendered_pixels():
         fig = render(profile(), curve_choice(), style=Style(**kw))
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
-        fig.clear()
+        dispose_figure(fig)
         return hashlib.sha256(buf.getvalue()).hexdigest()
 
     base = digest()
@@ -514,7 +514,7 @@ def test_mask_knobs_change_the_rendered_pixels():
         fig = render(p, rec, style=Style(**kw))
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
-        fig.clear()
+        dispose_figure(fig)
         return hashlib.sha256(buf.getvalue()).hexdigest()
 
     base = digest()
@@ -671,7 +671,7 @@ def test_legend_and_palette_knobs_change_the_rendered_pixels():
         fig = render(profile(), curve_choice(), style=Style(**kw))
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
-        fig.clear()
+        dispose_figure(fig)
         return hashlib.sha256(buf.getvalue()).hexdigest()
 
     base = digest()
@@ -874,7 +874,7 @@ def test_series_knobs_change_the_rendered_pixels():
         fig = render(profile(), curve_choice(), style=Style(**kw))
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=110)
-        fig.clear()
+        dispose_figure(fig)
         return hashlib.sha256(buf.getvalue()).hexdigest()
 
     base = digest()

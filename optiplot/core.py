@@ -40,6 +40,7 @@ class DataProfile:
     source_column: str | None = None
     target_column: str | None = None
     matrix_like: bool = False
+    complex_columns: dict = field(default_factory=dict)
 
 
 TIER_LABELS = {"high": "高", "medium": "中", "low": "低"}
@@ -549,6 +550,7 @@ def analyze_dataframe(df: pd.DataFrame, path="") -> DataProfile:
         grid_columns=grid,
         angle_units=units,
         missing_counts=missing,
+        complex_columns=_complex_pairs(numeric),
         source_column=source,
         target_column=target,
     )
@@ -584,6 +586,73 @@ def _decade_span(values) -> float:
 
 
 _MUELLER_CELLS = tuple(f"m{i}{j}" for i in range(4) for j in range(4))
+
+
+# Tokens that name a complex quantity's part, and the unit words that may trail
+# them in an instrument export.
+_STRUCTURAL = {
+    "re": "re", "real": "re",
+    "im": "im", "imag": "im", "imaginary": "im",
+    "phase": "phase", "angle": "phase", "arg": "phase",
+    "mag": "mag", "amplitude": "mag", "abs": "mag",
+}
+_UNIT_WORDS = {
+    "deg", "degree", "degrees", "rad", "radian", "radians", "db", "dbm",
+    "nm", "um", "mm", "cm", "m", "ug", "g", "s", "ms", "us", "ns", "ps",
+    "hz", "khz", "mhz", "ghz", "thz", "v", "mv", "a", "ma", "w", "mw", "pct",
+}
+_COMPLEX_KINDS = {"cartesian": ("re", "im"), "polar": ("mag", "phase")}
+
+
+def _role_of(column: str):
+    """(stem, role) for a column naming one part of a complex quantity.
+
+    Trailing unit words are skipped first, so `s21_phase_deg` and `s11_mag_db`
+    both resolve; a column whose remaining head token names no part is not a
+    part of anything, even when its unit says dB.
+    """
+    parts = [token for token in re.split(r"[_\s.\-]+", str(column).strip().lower()) if token]
+    role_token = None
+    while parts:
+        tail = parts[-1]
+        if tail in _STRUCTURAL:
+            role_token = tail
+            parts.pop()
+            break
+        if tail in _UNIT_WORDS and len(parts) > 1:
+            unit = tail
+            parts.pop()
+            if unit in ("db", "dbm") and parts and parts[-1] not in _STRUCTURAL:
+                # `s21_db` is a magnitude written in dB: the unit is the role.
+                return "_".join(parts), "mag"
+            continue
+        return None, None
+    if role_token is None or not parts:
+        return None, None
+    return "_".join(parts), _STRUCTURAL[role_token]
+
+
+def _complex_pairs(columns) -> dict:
+    """Base name -> {"kind", "parts"}, for columns that carry a complex quantity.
+
+    A vector network analyser exports |S21| in dB beside its phase; a solver
+    exports real and imaginary parts. Both are one quantity in two columns, and
+    which representation it is decides what the figure must convert before
+    drawing - so the two are never mixed, and a stem without a complete pair is
+    not a complex quantity at all.
+    """
+    by_stem: dict[str, dict[str, str]] = {}
+    for col in columns:
+        stem, role = _role_of(col)
+        if stem and role:
+            by_stem.setdefault(stem, {}).setdefault(role, col)
+    found = {}
+    for stem, roles in by_stem.items():
+        for kind, (left, right) in _COMPLEX_KINDS.items():
+            if left in roles and right in roles:
+                found[stem] = {"kind": kind, "parts": (roles[left], roles[right])}
+                break
+    return found
 
 
 def _named_block(columns, keys):
@@ -731,6 +800,9 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         for c in p.numeric_columns
         if c not in p.constant_columns and c not in p.id_columns and c not in p.error_columns
     ]
+    # Columns that are two parts of one complex quantity: comparable by name,
+    # meaningless when differenced.
+    complex_parts = {frozenset(pair["parts"]) for pair in p.complex_columns.values()}
 
     def add(identifier, title, tier, reason, encodings, rank):
         grouped_by = encodings.get("group")
@@ -892,6 +964,43 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
     y = responses[0] if responses else None
     # One row per device with several metrics: the rows are a list, not a sweep.
     label_column, label_metrics = _label_table(p, data, eligible)
+    for name, pair in p.complex_columns.items():
+        left, right = pair["parts"]
+        kind = pair["kind"]
+        carrier = next(
+            (c for c in p.axis_columns if c in eligible and _axis_rank(c) in (0, 1)), None
+        )
+        enc = {"response": name, "kind": kind, "parts": [left, right]}
+        if carrier:
+            add(
+                "bode",
+                "幅频与相频双面板（Bode）",
+                "high",
+                f"{left} 与 {right} 是同一个复响应 {name} 的两个部分，"
+                + (
+                    "幅度按分贝、相位按原样各自成面板，共用一条频率轴"
+                    if kind == "polar"
+                    else "幅度与相位都由实部/虚部换算得到，图上写明用了哪个因子"
+                )
+                + f"；横轴是 {carrier}，两面板必须同尺度对齐，否则读者会把相位差读成幅度差",
+                {**enc, "x": carrier},
+                0,
+            )
+        # The complex-plane view is only offered when it can be computed without
+        # guessing: undoing a dB magnitude needs the factor it was taken with.
+        inverted = any(word in str(left).lower() for word in ("db", "dbm"))
+        if kind == "cartesian" or not inverted:
+            add(
+                "nyquist",
+                "复平面轨迹（Nyquist）",
+                "high",
+                f"把 {name} 的虚部画在实部上，一条轨迹同时给出幅度与相位的变化；"
+                "两轴同量纲所以强制等比例，否则圆会被拉成椭圆；"
+                "顺序由数据行序决定，图上按采集顺序连线"
+                + ("" if kind == "cartesian" else "；实部虚部由幅值与相位换算得到"),
+                enc,
+                1,
+            )
     stokes = _stokes_columns(p.numeric_columns)
     if stokes:
         add(
@@ -1103,11 +1212,14 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
         # subtracting a position from an intensity is arithmetically valid and
         # physically empty.
         measured = [c for c in line_ys if _valid_count(data, [x, c]) >= 4]
+        # Two parts of one complex quantity share a stem, so the name test alone
+        # calls them comparable - but |H| minus arg(H) is not a measurement of
+        # anything. The pair is excluded wherever it came from a complex column.
         pairs = [
             (a, b)
             for i, a in enumerate(measured)
             for b in measured[i + 1 :]
-            if _comparable(a, b)
+            if _comparable(a, b) and frozenset((a, b)) not in complex_parts
         ]
         if pairs:
             a, b = pairs[0]
@@ -1438,7 +1550,9 @@ def recommend(profile: DataProfile) -> list[Recommendation]:
             (a, b)
             for i, a in enumerate(eligible)
             for b in eligible[i + 1 :]
-            if _twin_measurements(a, b) and _valid_count(data, [a, b]) >= 10
+            if _twin_measurements(a, b)
+            and frozenset((a, b)) not in complex_parts
+            and _valid_count(data, [a, b]) >= 10
         ),
         None,
     )

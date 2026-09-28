@@ -8,7 +8,7 @@ import json
 import zipfile
 import importlib.metadata
 import matplotlib
-from .render import render
+from .render import dispose_figure, render
 from .style import Style
 
 
@@ -35,7 +35,7 @@ def export_bundle(profile, recommendation, path, options=None):
 from types import SimpleNamespace
 import json, hashlib
 import pandas as pd
-from rendering import render
+from rendering import dispose_figure, render
 from style import Style
 root = Path(__file__).resolve().parent
 recipe = json.loads((root / 'recipe.json').read_text(encoding='utf-8'))
@@ -79,5 +79,5 @@ print('Reproduced PNG, SVG and PDF')
             with matplotlib.rc_context(style.rc_params()):
                 fig.savefig(buf, format=ext, **style.savefig_kwargs())
             z.writestr("figure." + ext, buf.getvalue())
-    fig.clear()
+    dispose_figure(fig)
     return Path(path)

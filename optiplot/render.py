@@ -50,6 +50,8 @@ FIGURE_TYPES = (
     "cumulative_response",
     "dual_axis",
     "peak_evolution",
+    "bode",
+    "nyquist",
     "scatter_fit",
     "density",
     "scatter_marginals",
@@ -107,7 +109,7 @@ LINE_KINDS = ("spectrum_lines", "log_log", "semi_log", "cumulative_response")
 # The axis a scale diagnostic logs whatever the caller asked for: the type exists
 # to make that reading, so an option switching it off would leave a plain curve
 # filed under a name that promises something else.
-FORCED_LOG = {"log_log": ("x", "y"), "semi_log": ("y",)}
+FORCED_LOG = {"log_log": ("x", "y"), "semi_log": ("y",), "bode": ("x",)}
 # Types that draw a grid of panels rather than one axes: their caption belongs to
 # the figure, not to whichever cell happens to be first.
 GRID_OWNED = ("pairs",)
@@ -123,6 +125,7 @@ TYPE_OPTIONS = {
     "errorbar": ("error_type",),
     "group_bar": ("error_type",),
     "group_metric_heatmap": ("metric_scale",),
+    "bode": ("unwrap",),
 }
 METRIC_SCALES = ("minmax", "zscore")
 OPTION_OWNERS = {}
@@ -148,6 +151,7 @@ LOG_AXIS_TYPES = (
     "log_log",
     "semi_log",
     "cumulative_response",
+    "bode",
     "spectral_ratio",
     "spectral_envelope",
     "energy_axis",
@@ -289,6 +293,24 @@ def _break_marks(left, right, style):
     right.spines["left"].set_visible(False)
 
 
+def dispose_figure(fig) -> None:
+    """Release a figure once the caller is done with it.
+
+    matplotlib resets every axis to (0, 1) while clearing and then warns that a
+    non-positive limit is ignored on a log-scaled axis. That is a statement about
+    the teardown, not about the figure, and it fired on every exported log plot
+    whose panels shared an axis - so the disposal goes through here rather than
+    each caller learning to filter a warning.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Attempt to set non-positive .*lim on a log-scaled axis",
+            category=UserWarning,
+        )
+        fig.clear()
+
+
 def _fit_overlay(
     ax, residual_ax, df, xname, yname, choice, palette, style, x_factor=1.0, log_x=False,
     space_note="",
@@ -385,6 +407,79 @@ def _group_limit_note(dropped, limit=20):
     if not dropped:
         return ""
     return f"\n只画了前 {limit} 组，另有 {dropped} 个分组取值未画——组标签不是全部"
+
+
+def _phase_unit(column, values) -> str:
+    """Degrees or radians, from the name first and the range second.
+
+    A phase column is an angle but not one the polar machinery should claim, so
+    the unit is resolved here rather than by adding it to the angle columns.
+    """
+    lowered = str(column).lower()
+    if any(word in lowered for word in ("rad", "radian")):
+        return "rad"
+    if any(word in lowered for word in ("deg", "degree", "°", "度")):
+        return "deg"
+    span = float(np.nanmax(np.abs(values))) if np.isfinite(values).any() else 0.0
+    return "deg" if span > 2 * np.pi + 1e-6 else "rad"
+
+
+def _complex_parts(df, e, style, need_cartesian=False, need_db=True):
+    """Real, imaginary, dB magnitude and degrees phase, with what was converted.
+
+    Returns (real, imag, db, phase_deg, notes, magnitude_label). A table that names its columns
+    magnitude and phase still has to be turned into real and imaginary parts for
+    the complex-plane view, and the reverse for a Bode phase panel drawn from
+    real and imaginary parts; each conversion is reported so the figure never
+    looks like it merely read a column.
+    """
+    left, right = e["parts"]
+    a = pd.to_numeric(df[left], errors="coerce").replace([np.inf, -np.inf], np.nan)
+    b = pd.to_numeric(df[right], errors="coerce").replace([np.inf, -np.inf], np.nan)
+    notes = []
+    factor = float(style.db_factor)
+    if e["kind"] == "cartesian":
+        real, imag = a.to_numpy(dtype=float), b.to_numpy(dtype=float)
+        amplitude = np.hypot(real, imag)
+        phase = np.degrees(np.arctan2(imag, real))
+        notes.append("幅度与相位由实部/虚部换算：|H| = √(re² + im²)，相位 = atan2(im, re)")
+        db = factor * np.log10(amplitude) if need_db else amplitude
+        db_label = f"{factor:g}·log10|{e['response']}|"
+    else:
+        given = a.to_numpy(dtype=float)
+        unit = _phase_unit(right, b.to_numpy(dtype=float))
+        phase = np.degrees(b.to_numpy(dtype=float)) if unit == "rad" else b.to_numpy(dtype=float)
+        if unit == "rad":
+            notes.append("相位列按弧度读并换算成度；名字里没写单位时按取值范围判断")
+        in_db = any(word in str(left).lower() for word in ("db", "dbm"))
+        if in_db and need_cartesian:
+            # Undoing a dB column needs the factor it was taken with, and the
+            # column name does not say: 20log10|S21| and 10log10|S21|^2 are the
+            # same measurement written two ways. Guessing squares the error.
+            raise ValueError(
+                "幅度列是分贝，还原实部/虚部要先知道取分贝时用的是 10 还是 20。"
+                "请设 db_factor，或改用仪器导出的实部/虚部两列。"
+            )
+        # A dB column is a logarithmic one: feeding it to cos/sin as if it were a
+        # ratio puts the trace outside the unit circle for any passive device.
+        amplitude = 10.0 ** (given / factor) if in_db else given
+        db = given if in_db else factor * np.log10(amplitude)
+        db_label = f"|{e['response']}| 列自带 dB" if in_db else f"{factor:g}·log10|{e['response']}|"
+        if in_db:
+            notes.append("幅度列已是分贝，直接用作纵轴；换算实部/虚部前先取 10^(dB/因子) 还原线性幅度")
+            notes.append(
+                f"复平面用的是线性幅度 10^(dB/{factor:g})，不是分贝数本身"
+            )
+        elif need_db:
+            notes.append(
+                f"幅度列是线性量，按 {factor:g}·log10|H| 取分贝；"
+                "场幅用 20、功率用 10，用错就是两倍的标度误差"
+            )
+    if e["kind"] == "polar":
+        # Only the polar form needs building; the cartesian one is the input.
+        real = amplitude * np.cos(np.radians(phase))
+        imag = amplitude * np.sin(np.radians(phase))
+    return real, imag, db, phase, notes, db_label
 
 
 def _grouped_values(df, group, value, limit=20):
@@ -944,6 +1039,15 @@ def render(profile, rec, output=None, options=None, style=None):
                 fig.add_subplot(grid[1, 1], sharey=ax),
                 fig.add_subplot(grid[:, 2]),
             )
+        elif rec.id == "bode":
+            # Two panels, one frequency axis: a phase read against its own
+            # unlabelled grid invites the reader to line it up with the wrong
+            # magnitude, so the panels share the axis and only the lower one
+            # carries the numbers.
+            grid = fig.add_gridspec(2, 1, height_ratios=[1.0, 1.0], hspace=0.10)
+            ax = fig.add_subplot(grid[0])
+            phase_ax = fig.add_subplot(grid[1], sharex=ax)
+            companion_ax = phase_ax
         elif rec.id == "scatter_marginals":
             # Same shape as the heatmap's marginal pair: the two profile panels
             # share the scatter's axes, so the colour bar's column is not needed.
@@ -1031,6 +1135,10 @@ def render(profile, rec, output=None, options=None, style=None):
                 label.set_visible(False)
             residual_ax.set_xlabel(ax.get_xlabel() or "")
             ax.set_xlabel("")
+        elif rec.id == "bode":
+            # Same rule for the two Bode panels: the frequency axis is read once.
+            for label in ax.get_xticklabels():
+                label.set_visible(False)
         if opts.get("title"):
             # A renderer note (what the dB reference is, how many cells were
             # hidden) carries the meaning of the figure, so a user title goes
@@ -1636,6 +1744,92 @@ def _draw(ax, fig, df, kind, e, opts, style, residual_ax=None, marginal_axes=Non
             )
         handles = ax.get_lines() + (second.get_lines() if second is not None else [])
         _legend(ax, style, handles=handles)
+    elif kind == "bode":
+        xname = e["x"]
+        real, imag, db, phase, notes, magnitude_label = _complex_parts(df, e, style)
+        xs = pd.to_numeric(df[xname], errors="coerce").to_numpy(dtype=float)
+        if companion_ax is None:
+            raise ValueError("Bode 图需要幅频与相频两个面板。")
+        # Each panel masks only its own missing reading: a frequency point with no
+        # phase still has a magnitude, and dropping it from both panels would hide
+        # that fact. Absent points become NaN so the trace breaks there.
+        def column(values):
+            ok = np.isfinite(xs) & np.isfinite(values)
+            return np.where(ok, xs, np.nan), np.where(ok, values, np.nan)
+
+        unwrapped = bool(opts.get("unwrap", False))
+        phase_values = phase.copy()
+        keep = np.isfinite(xs) & np.isfinite(phase)
+        if unwrapped and keep.sum() > 1:
+            # Unwrap the surviving readings only, then put them back at their
+            # frequencies: unwrapping across a hole would invent a jump that was
+            # never measured.
+            phase_values[keep] = np.degrees(np.unwrap(np.radians(phase[keep])))
+        mx, my = column(db)
+        px, py = column(phase_values)
+        ax.plot(mx, my, color=palette[0 % len(palette)],
+                drawstyle="steps-mid" if style.step else "default",
+                **style.series_style(0))
+        live_phase = phase[np.isfinite(xs) & np.isfinite(phase)]
+        seams = int(np.sum(np.abs(np.diff(live_phase)) > 180.0)) if live_phase.size > 1 else 0
+        companion_ax.plot(px, py, color=palette[1 % len(palette)],
+                          drawstyle="steps-mid" if style.step else "default",
+                          **style.series_style(1))
+        companion_ax.set(xlabel=xname, ylabel="相位 (°)")
+        ax.set(ylabel=f"幅度 ({magnitude_label})", xlabel="")
+        lines = [
+            f"横轴 {xname} 取对数；上下面板共用同一条频率轴，只有下方标数字",
+        ]
+        lines.extend(notes)
+        if unwrapped:
+            lines.append(
+                f"相位已展开（unwrap）：{seams} 处 ±180° 跳变被累加成连续曲线，"
+                "展开后的绝对值不再是仪器读数"
+            )
+        elif seams:
+            lines.append(
+                f"相位是原始缠绕值，检测到 {seams} 处 ±180° 跳变；展开会改变跳变之后的读数，"
+                "需要时显式勾选 unwrap"
+            )
+        lost_db = int(np.sum(~np.isfinite(my)))
+        lost_phase = int(np.sum(~np.isfinite(py)))
+        if lost_db or lost_phase:
+            lines.append(
+                f"幅度面板缺 {lost_db} 个频点、相位面板缺 {lost_phase} 个；"
+                "缺读数的地方线是断的，不连线补值"
+            )
+        ax.set_title("\n".join(lines), loc="left", pad=8,
+                     fontsize=style.resolved_font_size() * 0.8)
+    elif kind == "nyquist":
+        real, imag, db, phase, notes, _ = _complex_parts(
+            df, e, style, need_cartesian=True, need_db=False
+        )
+        live = np.isfinite(real) & np.isfinite(imag)
+        # NaN where a reading is absent, so the trace breaks instead of cutting
+        # across the hole and letting that segment look measured.
+        ax.plot(np.where(live, real, np.nan), np.where(live, imag, np.nan),
+                color=palette[0 % len(palette)], **style.series_style(0))
+        ax.scatter([real[live][0]], [imag[live][0]], s=style.marker_size ** 2,
+                   color=palette[0 % len(palette)], zorder=max(int(style.series_zorder) + 2, 4),
+                   label="起点（按行序）")
+        ax.scatter([real[live][-1]], [imag[live][-1]], s=style.marker_size ** 2,
+                   facecolors="none", edgecolors=palette[0 % len(palette)],
+                   linewidths=style.marker_edge_width,
+                   zorder=max(int(style.series_zorder) + 2, 4), label="终点")
+        # Both axes carry the same quantity's unit, so the only honest box is a
+        # square one: a stretched frame turns a circle into an ellipse and the
+        # reader reads that as a second relaxation process.
+        ax.set_aspect("equal", adjustable="box")
+        ax.axhline(0.0, color="#7A94AB", lw=0.7, ls=":")
+        ax.axvline(0.0, color="#7A94AB", lw=0.7, ls=":")
+        ax.set(xlabel=f"实部 {e['response']}", ylabel=f"虚部 {e['response']}")
+        lines = ["两轴同量纲，已强制等比例：不等比例的框会把圆拉成椭圆"] + notes
+        dropped = int((~live).sum())
+        if dropped:
+            lines.append(f"{dropped} 个点读数不完整，轨迹在那里断开而不连线补值")
+        ax.set_title("\n".join(lines), loc="left", pad=8,
+                     fontsize=style.resolved_font_size() * 0.8)
+        _legend(ax, style)
     elif kind in ["scatter_fit", "density"]:
         xname, yname = e["x"], e["y"]
         choice = str(opts.get("fit", e.get("fit", "none")))
